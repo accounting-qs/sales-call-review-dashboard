@@ -105,19 +105,39 @@ export default function CallDetailPage() {
         </div>
     );
 
-    const sections = analysis ? [
-        { id: 'intro', label: 'Intro / Pitch Frame', data: analysis.sections.intro },
-        { id: 'bizAnalysis', label: 'Business Analysis', data: analysis.sections.bizAnalysis },
-        { id: 'challenges', label: 'Challenges / Bottlenecks', data: analysis.sections.challenges },
-        { id: 'goals', label: 'Goals / Desired State', data: analysis.sections.goals },
-        { id: 'transition', label: 'Transition to Pitch', data: analysis.sections.transition },
-        { id: 'funnelFlow', label: 'Funnel Flow / Process', data: analysis.sections.funnelFlow },
-        { id: 'timeline', label: 'Timeline & Urgency', data: analysis.sections.timeline },
-        { id: 'roiCalc', label: 'ROI Calculation', data: analysis.sections.roiCalc },
-        { id: 'tempCheck', label: 'Temp Check / PD', data: analysis.sections.tempCheck },
-        { id: 'objections', label: 'Objection Handling', data: analysis.sections.objections },
-        { id: 'nextSteps', label: 'Next Steps / Close', data: analysis.sections.nextSteps },
-    ] : [];
+    const getCall1Sections = (data: any) => [
+        { id: 'intro', label: 'Intro / Pitch Frame', data: data.intro },
+        { id: 'bizAnalysis', label: 'Business Analysis', data: data.bizAnalysis },
+        { id: 'challenges', label: 'Challenges / Current Marketing', data: data.challenges },
+        { id: 'goals', label: 'Goals / Vision', data: data.goals },
+        { id: 'transition', label: 'Transition to Pitch', data: data.transition },
+        { id: 'funnelFlow', label: 'Funnel Flow Demonstration', data: data.funnelFlow },
+        { id: 'timeline', label: 'Timeline & Roadmap', data: data.timeline },
+        { id: 'roiCalc', label: 'ROI Calculator', data: data.roiCalc },
+        { id: 'tempCheck', label: 'Temp Check', data: data.tempCheck },
+        { id: 'priceDrop', label: 'Price Drop', data: data.priceDrop },
+        { id: 'objections', label: 'Objection Handling', data: data.objections },
+        { id: 'decisionLeadership', label: 'Decision Leadership & Timeline', data: data.decisionLeadership },
+        { id: 'booking', label: 'Booking & Post-Call Frame', data: data.booking },
+    ];
+
+    const getCall2Sections = (data: any) => [
+        { id: 'intro', label: 'S1: Intro', data: data.intro },
+        { id: 'technicalQuestions', label: 'S2: Technical Questions', data: data.technicalQuestions },
+        { id: 'sevenBehaviours', label: 'S3: 7 Behaviours', data: data.sevenBehaviours },
+        { id: 'refundExplanation', label: 'S4: Refund Explanation', data: data.refundExplanation },
+        { id: 'tempCheckObjections', label: 'S5: Temp Check & Objections', data: data.tempCheckObjections },
+        { id: 'rePriceDrop', label: 'S6: Re-Price Drop', data: data.rePriceDrop },
+        { id: 'contractReview', label: 'S7: Contract Review', data: data.contractReview },
+        { id: 'closing', label: 'S8: Closing', data: data.closing },
+    ];
+
+    let sections: { id: string; label: string; data: any }[] = [];
+    if (analysis) {
+        sections = analysis.callType === 'evaluation'
+            ? getCall1Sections(analysis.sections)
+            : getCall2Sections(analysis.sections);
+    }
 
     return (
         <div className="flex-1 flex flex-col min-h-0 bg-slate-50/50">
@@ -125,7 +145,7 @@ export default function CallDetailPage() {
                 breadcrumbs={[
                     { label: 'Representative Profile', href: `/reps/${call.repEmail}` },
                     { label: call.repName, href: `/reps/${call.repEmail}` },
-                    { label: 'Call Review' }
+                    { label: 'Internal Analysis Report' }
                 ]}
                 actions={
                     <Button
@@ -166,18 +186,27 @@ export default function CallDetailPage() {
                                 <Building2 className="w-4 h-4 text-slate-300" />
                                 {call.prospectCompany}
                             </div>
+                            {analysis?.leadSource && (
+                                <div className="flex items-center gap-2">
+                                    <Target className="w-4 h-4 text-slate-300" />
+                                    Source: {analysis.leadSource}
+                                </div>
+                            )}
+                            <Badge variant="outline" className="border-indigo-100 bg-indigo-50/50 text-indigo-700 font-bold uppercase text-[10px]">
+                                {analysis?.callType === 'evaluation' ? 'Business Evaluation (Call 1)' : 'Follow-up (Call 2)'}
+                            </Badge>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-4">
                         <Card className="border-none shadow-sm bg-indigo-600 text-white p-4 min-w-[140px] text-center">
                             <p className="text-[10px] font-bold uppercase tracking-widest opacity-70 mb-1">Overall Score</p>
-                            <h2 className="text-3xl font-black">{(analysis?.totalScore || 0) / 10} <span className="text-sm font-medium opacity-50">/ 10</span></h2>
+                            <h2 className="text-3xl font-black">{(analysis?.totalScore || 0).toFixed(1)} <span className="text-sm font-medium opacity-50">/ 100</span></h2>
                         </Card>
                         <Card className="border-none shadow-sm bg-white p-4 min-w-[140px] text-center">
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Deal Risk</p>
                             <Badge
-                                variant={analysis?.dealRisk === 'high' ? 'destructive' : analysis?.dealRisk === 'medium' ? 'secondary' : 'default'}
+                                variant={analysis?.dealRisk === 'high' || analysis?.dealRisk === 'critical' ? 'destructive' : analysis?.dealRisk === 'medium' ? 'secondary' : 'default'}
                                 className="uppercase text-[10px] font-black px-3 py-1"
                             >
                                 {analysis?.dealRisk || 'Low'} Risk
@@ -185,6 +214,44 @@ export default function CallDetailPage() {
                         </Card>
                     </div>
                 </div>
+
+                {/* Analysis Summary Card */}
+                {analysis?.callAnalysis && (
+                    <Card className="border-none shadow-sm bg-white mb-8 border-l-4 border-indigo-600">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-indigo-600" />
+                                Executive Call Analysis
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-slate-700 leading-relaxed font-medium">
+                                {analysis.callAnalysis}
+                            </p>
+                            <div className="mt-4 flex flex-wrap gap-4 pt-4 border-t border-slate-50 font-medium text-sm">
+                                <div className="text-slate-500">
+                                    <span className="text-slate-400 uppercase text-[10px] font-bold block mb-1">Current Outcome</span>
+                                    {analysis.outcome}
+                                </div>
+                                <div className="text-slate-500">
+                                    <span className="text-slate-400 uppercase text-[10px] font-bold block mb-1">Script Alignment</span>
+                                    <span className={cn(
+                                        "font-bold",
+                                        analysis.scriptAlignment === 'aligned' ? 'text-green-600' : 'text-amber-600'
+                                    )}>
+                                        {analysis.scriptAlignment.replace('_', ' ').toUpperCase()}
+                                    </span>
+                                </div>
+                                {analysis.miscellaneous && (
+                                    <div className="text-slate-500">
+                                        <span className="text-slate-400 uppercase text-[10px] font-bold block mb-1">Miscellaneous</span>
+                                        {analysis.miscellaneous}
+                                    </div>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
 
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
                     {/* Main Content: Sections & Coaching */}

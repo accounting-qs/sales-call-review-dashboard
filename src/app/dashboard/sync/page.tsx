@@ -1,0 +1,668 @@
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import {
+    RefreshCw,
+    Play,
+    CheckCircle2,
+    Clock,
+    Search as SearchIcon,
+    Filter,
+    ArrowUpDown,
+    ExternalLink,
+    Brain,
+    Users,
+    FileText,
+    MessageSquare,
+    ChevronRight,
+    Settings as SettingsIcon,
+    AlertCircle,
+    Save
+} from 'lucide-react';
+import { Header } from '@/components/layout/Header';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import {
+    Sheet,
+    SheetContent,
+    SheetDescription,
+    SheetHeader,
+    SheetTitle,
+    SheetTrigger,
+} from '@/components/ui/sheet';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow
+} from '@/components/ui/table';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+} from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
+
+interface FirefliesTranscript {
+    id: string;
+    title: string | null;
+    date: number;
+    duration: number;
+    host_email: string | null;
+    organizer_email: string | null;
+    transcript_url: string;
+    participants?: string[];
+    sentences?: Array<{
+        index: number;
+        speaker_name: string;
+        text: string;
+        start_time: number;
+        end_time: number;
+    }>;
+}
+
+export default function SyncPage() {
+    const [transcripts, setTranscripts] = useState<FirefliesTranscript[]>([]);
+    const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
+    const [loading, setLoading] = useState(true);
+    const [syncing, setSyncing] = useState(false);
+    const [search, setSearch] = useState('');
+    const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+    const [selectedTranscript, setSelectedTranscript] = useState<FirefliesTranscript | null>(null);
+    const [loadingDetails, setLoadingDetails] = useState(false);
+    const [isFullScreen, setIsFullScreen] = useState(false);
+    const [transcriptSearch, setTranscriptSearch] = useState('');
+
+    // Settings state
+    const [pipelineSettings, setPipelineSettings] = useState({
+        autoAnalysis: false,
+        evaluationKeywords: 'Evaluation Call, Business Evaluation',
+        followupKeywords: 'Follow-up',
+        excludedKeywords: 'Test, Internal',
+        defaultAgent: 'none'
+    });
+    const [savingSettings, setSavingSettings] = useState(false);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+    const fetchFireflies = async () => {
+        setSyncing(true);
+        try {
+            const res = await fetch('/api/sync/fireflies?limit=50');
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                setTranscripts(data);
+
+                // Check which ones are already processed in Firestore
+                const callsRef = collection(db, 'calls');
+                const tIds = data.slice(0, 30).map(t => t.id);
+                if (tIds.length > 0) {
+                    const q = query(callsRef, where('firefliesId', 'in', tIds));
+                    const snapshot = await getDocs(q);
+                    const ids = new Set(snapshot.docs.map(doc => doc.data().firefliesId));
+                    setProcessedIds(ids);
+                }
+            }
+        } catch (error) {
+            console.error("Sync error:", error);
+        } finally {
+            setSyncing(false);
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchFireflies();
+        loadSettings();
+    }, []);
+
+    const loadSettings = async () => {
+        try {
+            const docRef = doc(db, 'settings', 'fireflies_pipeline');
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                setPipelineSettings(docSnap.data() as any);
+            }
+        } catch (error) {
+            console.error("Error loading settings:", error);
+        }
+    };
+
+    const saveSettings = async () => {
+        setSavingSettings(true);
+        try {
+            await setDoc(doc(db, 'settings', 'fireflies_pipeline'), {
+                ...pipelineSettings,
+                updatedAt: new Date().toISOString()
+            });
+            setIsSettingsOpen(false);
+            alert("Pipeline settings saved successfully!");
+        } catch (error) {
+            console.error("Error saving settings:", error);
+            alert("Failed to save settings");
+        } finally {
+            setSavingSettings(false);
+        }
+    };
+
+    const handleAnalyze = async (firefliesId: string, callType: 'evaluation' | 'followup') => {
+        setAnalyzingId(firefliesId);
+        try {
+            const res = await fetch('/api/sync/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ firefliesId, callType })
+            });
+
+            if (res.ok) {
+                setProcessedIds(prev => new Set([...Array.from(prev), firefliesId]));
+                alert(`Analysis started for ${callType.toUpperCase()}! It will appear in the dashboard shortly.`);
+            } else {
+                const err = await res.json();
+                alert(`Error: ${err.error}`);
+            }
+        } catch (error) {
+            alert("Failed to trigger analysis");
+        } finally {
+            setAnalyzingId(null);
+        }
+    };
+
+    const handleViewDetails = async (transcript: FirefliesTranscript) => {
+        setSelectedTranscript(transcript);
+        setLoadingDetails(true);
+        setTranscriptSearch('');
+        try {
+            const res = await fetch(`/api/sync/transcript?id=${transcript.id}`);
+            const data = await res.json();
+            if (data && !data.error) {
+                setSelectedTranscript(data);
+            }
+        } catch (error) {
+            console.error("Error fetching details:", error);
+        } finally {
+            setLoadingDetails(false);
+        }
+    };
+
+    const highlightText = (text: string, highlight: string) => {
+        if (!highlight.trim()) return text;
+        const regex = new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+        const parts = text.split(regex);
+        return (
+            <span>
+                {parts.map((part, i) =>
+                    part.toLowerCase() === highlight.toLowerCase() ? (
+                        <mark key={i} className="bg-yellow-200 text-slate-900 rounded-sm px-0.5">{part}</mark>
+                    ) : (
+                        part
+                    )
+                )}
+            </span>
+        );
+    };
+
+    const filteredTranscripts = transcripts.filter(t => {
+        const title = (t.title || '').toLowerCase();
+        const email = (t.host_email || '').toLowerCase();
+        const participants = (t.participants || []).join(',').toLowerCase();
+        const searchVal = search.toLowerCase();
+        return title.includes(searchVal) || email.includes(searchVal) || participants.includes(searchVal);
+    });
+
+    const formatDate = (ms: number) => {
+        return new Date(ms).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
+
+    const formatDuration = (mins: number) => {
+        const m = Math.floor(mins);
+        const s = Math.round((mins - m) * 60);
+        return `${m}m ${s}s`;
+    };
+
+    const getInitials = (email: string) => {
+        return email.split('@')[0].slice(0, 2).toUpperCase();
+    };
+
+    if (loading) return (
+        <div className="flex-1 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+        </div>
+    );
+
+    return (
+        <div className="flex-1 flex flex-col min-h-0 bg-slate-50/50">
+            <Header
+                breadcrumbs={[{ label: 'Manager Dashboard' }, { label: 'Sync Fireflies' }]}
+                actions={
+                    <div className="flex items-center gap-3">
+                        <Sheet open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+                            <SheetTrigger asChild>
+                                <Button variant="outline" className="h-10 w-10 p-0 rounded-xl border-slate-200">
+                                    <SettingsIcon className="w-4 h-4 text-slate-500" />
+                                </Button>
+                            </SheetTrigger>
+                            <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
+                                <SheetHeader>
+                                    <SheetTitle className="text-xl font-black uppercase tracking-tight">Pipeline Settings</SheetTitle>
+                                    <SheetDescription className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                                        Configure automated synchronization and AI analysis rules
+                                    </SheetDescription>
+                                </SheetHeader>
+
+                                <div className="mt-8 space-y-8 pb-10">
+                                    {/* Auto Analysis Toggle */}
+                                    <div className="flex items-center justify-between p-4 rounded-2xl bg-indigo-50 border border-indigo-100">
+                                        <div className="space-y-0.5">
+                                            <Label className="text-sm font-black text-indigo-900">Auto-Analyze Transcripts</Label>
+                                            <p className="text-[10px] text-indigo-600/70 font-bold uppercase">Trigger analysis immediately after sync</p>
+                                        </div>
+                                        <Switch
+                                            checked={pipelineSettings.autoAnalysis}
+                                            onCheckedChange={(val) => setPipelineSettings(prev => ({ ...prev, autoAnalysis: val }))}
+                                        />
+                                    </div>
+
+                                    {/* Evaluation Keywords */}
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2">
+                                            <Badge className="bg-indigo-600 text-white border-none font-black text-[9px] px-2 py-0.5 uppercase">Call 1</Badge>
+                                            <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Evaluation Keywords</Label>
+                                        </div>
+                                        <Input
+                                            placeholder="Evaluation Call, Business Evaluation..."
+                                            className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm"
+                                            value={pipelineSettings.evaluationKeywords}
+                                            onChange={(e) => setPipelineSettings(prev => ({ ...prev, evaluationKeywords: e.target.value }))}
+                                        />
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase italic">Comma separated keywords to route to Call 1 agent</p>
+                                    </div>
+
+                                    {/* Follow-up Keywords */}
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2">
+                                            <Badge className="bg-purple-600 text-white border-none font-black text-[9px] px-2 py-0.5 uppercase">Call 2</Badge>
+                                            <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Follow-up Keywords</Label>
+                                        </div>
+                                        <Input
+                                            placeholder="Follow-up, Check-in..."
+                                            className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm"
+                                            value={pipelineSettings.followupKeywords}
+                                            onChange={(e) => setPipelineSettings(prev => ({ ...prev, followupKeywords: e.target.value }))}
+                                        />
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase italic">Keywords to route to Call 2 agent</p>
+                                    </div>
+
+                                    {/* Excluded Keywords */}
+                                    <div className="space-y-3">
+                                        <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Excluded Title Keywords</Label>
+                                        <Input
+                                            placeholder="Test, Internal, Mock..."
+                                            className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm"
+                                            value={pipelineSettings.excludedKeywords}
+                                            onChange={(e) => setPipelineSettings(prev => ({ ...prev, excludedKeywords: e.target.value }))}
+                                        />
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase italic">Calls containing these words will never be auto-analyzed</p>
+                                    </div>
+
+                                    {/* Default Agent */}
+                                    <div className="space-y-3">
+                                        <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Default Unmatched Agent</Label>
+                                        <Select
+                                            value={pipelineSettings.defaultAgent}
+                                            onValueChange={(val) => setPipelineSettings(prev => ({ ...prev, defaultAgent: val }))}
+                                        >
+                                            <SelectTrigger className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm">
+                                                <SelectValue placeholder="Select default agent" />
+                                            </SelectTrigger>
+                                            <SelectContent className="rounded-xl border-slate-100">
+                                                <SelectItem value="none">None (Manual only)</SelectItem>
+                                                <SelectItem value="evaluation">Call 1 (Evaluation)</SelectItem>
+                                                <SelectItem value="followup">Call 2 (Follow-up)</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase italic">Agent to use if title matches no keywords</p>
+                                    </div>
+
+                                    <div className="pt-6">
+                                        <Button
+                                            className="w-full bg-slate-900 hover:bg-black h-12 rounded-xl font-black uppercase text-xs tracking-[0.2em] gap-2 shadow-xl shadow-slate-200"
+                                            onClick={saveSettings}
+                                            disabled={savingSettings}
+                                        >
+                                            {savingSettings ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                            Save Pipeline Config
+                                        </Button>
+                                    </div>
+                                </div>
+                            </SheetContent>
+                        </Sheet>
+
+                        <Button
+                            onClick={fetchFireflies}
+                            disabled={syncing}
+                            className="bg-indigo-600 hover:bg-indigo-700 h-10 gap-2 font-bold uppercase text-xs tracking-widest shadow-lg shadow-indigo-100 px-6 rounded-xl"
+                        >
+                            <RefreshCw className={cn("w-3 h-3", syncing && "animate-spin")} />
+                            {syncing ? 'Syncing...' : 'Sync Transcripts'}
+                        </Button>
+                    </div>
+                }
+            />
+
+            <div className="flex-1 overflow-y-auto px-8 py-8 pb-24">
+                <div className="mb-10">
+                    <h1 className="text-3xl font-black text-slate-900 tracking-tight font-outfit uppercase">
+                        Fireflies Pipeline
+                    </h1>
+                    <p className="text-slate-400 text-sm font-bold mt-2 uppercase tracking-[0.1em]">View all recordings and select calls for AI deep-dive analysis</p>
+                </div>
+
+                <div className="flex items-center gap-4 mb-8">
+                    <div className="relative flex-1 max-w-md">
+                        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Input
+                            placeholder="Filter by title, rep, or participant..."
+                            className="pl-10 h-11 bg-white border-slate-200 rounded-xl text-sm"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                        />
+                    </div>
+                </div>
+
+                <Card className="border-none shadow-sm bg-white overflow-hidden rounded-2xl">
+                    <CardContent className="p-0">
+                        <Table>
+                            <TableHeader className="bg-slate-50/50">
+                                <TableRow className="hover:bg-transparent border-slate-100 h-12">
+                                    <TableHead className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-8 w-48">Date & Time</TableHead>
+                                    <TableHead className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recording Title</TableHead>
+                                    <TableHead className="text-[10px] font-black text-slate-400 uppercase tracking-widest">People</TableHead>
+                                    <TableHead className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Duration</TableHead>
+                                    <TableHead className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-right pr-8">Actions</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {filteredTranscripts.map((t) => (
+                                    <TableRow key={t.id} className="border-slate-50 hover:bg-slate-50/50 transition-colors h-20 group cursor-pointer" onClick={() => handleViewDetails(t)}>
+                                        <TableCell className="pl-8">
+                                            <div className="flex flex-col">
+                                                <span className="text-xs font-bold text-slate-900">{formatDate(t.date)}</span>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-sm font-bold text-slate-900 truncate max-w-[250px] uppercase tracking-tight">{t.title}</span>
+                                                <Badge variant="outline" className="text-[8px] font-black uppercase tracking-tighter bg-slate-50 border-slate-200">Recording</Badge>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="flex -space-x-2">
+                                                {(t.participants || [t.host_email]).slice(0, 3).map((p, i) => (
+                                                    <Avatar key={i} className="w-8 h-8 border-2 border-white ring-0">
+                                                        <AvatarFallback className={cn("text-[10px] font-black text-white", i === 0 ? "bg-indigo-600" : i === 1 ? "bg-purple-600" : "bg-slate-400")}>
+                                                            {getInitials(p || '??')}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                ))}
+                                                {(t.participants?.length || 0) > 3 && (
+                                                    <div className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-black text-slate-500">
+                                                        +{t.participants!.length - 3}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                                                <Clock className="w-3 h-3" />
+                                                {formatDuration(t.duration)}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-right pr-8" onClick={(e) => e.stopPropagation()}>
+                                            <div className="flex items-center justify-end gap-2">
+                                                {processedIds.has(t.id) ? (
+                                                    <Badge variant="secondary" className="bg-green-50 text-green-700 border-none px-3 py-1 gap-1.5 font-bold text-[10px] uppercase tracking-tight">
+                                                        <CheckCircle2 className="w-3 h-3" /> Analyzed
+                                                    </Badge>
+                                                ) : (
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button
+                                                                size="sm"
+                                                                className="h-9 gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[10px] uppercase tracking-widest px-4 rounded-xl shadow-md shadow-indigo-100"
+                                                                disabled={analyzingId === t.id}
+                                                            >
+                                                                <Play className={cn("w-3 h-3 fill-current", analyzingId === t.id && "animate-spin")} />
+                                                                {analyzingId === t.id ? 'Analyzing...' : 'Analyze'}
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end" className="w-[220px] p-2 rounded-xl shadow-2xl border-slate-100">
+                                                            <div className="px-2 py-1.5 mb-1">
+                                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Framework</p>
+                                                            </div>
+                                                            <DropdownMenuItem
+                                                                className="rounded-lg py-2.5 cursor-pointer font-bold text-slate-700 focus:bg-indigo-50 focus:text-indigo-700 gap-3"
+                                                                onClick={() => handleAnalyze(t.id, 'evaluation')}
+                                                            >
+                                                                <Brain className="w-4 h-4" />
+                                                                Agent: Call 1 (Evaluation)
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem
+                                                                className="rounded-lg py-2.5 cursor-pointer font-bold text-slate-700 focus:bg-indigo-50 focus:text-indigo-700 gap-3"
+                                                                onClick={() => handleAnalyze(t.id, 'followup')}
+                                                            >
+                                                                <RefreshCw className="w-4 h-4" />
+                                                                Agent: Call 2 (Follow-up)
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                )}
+                                                <Button size="icon" variant="ghost" className="h-9 w-9 rounded-xl text-slate-400 hover:text-indigo-600" onClick={() => window.open(t.transcript_url, '_blank')}>
+                                                    <ExternalLink className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* Transcript Details Dialog */}
+            <Dialog open={!!selectedTranscript} onOpenChange={(open) => {
+                if (!open) {
+                    setSelectedTranscript(null);
+                    setIsFullScreen(false);
+                }
+            }}>
+                <DialogContent className={cn(
+                    "flex flex-col p-0 overflow-hidden border-none shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] bg-white ring-1 ring-slate-100/50 transition-all duration-300 ease-in-out sm:max-w-none",
+                    isFullScreen
+                        ? "fixed inset-0 w-screen h-screen rounded-none z-[100] translate-x-0 translate-y-0 left-0 top-0"
+                        : "w-[95vw] max-w-7xl h-[92vh] rounded-[2rem] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+                )}>
+                    <DialogHeader className="px-8 py-4 bg-white border-b border-slate-50/50 shrink-0 relative">
+                        <div className="flex flex-col gap-2">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <Badge className="bg-indigo-600 text-white border-none font-black text-[9px] px-3 py-1 uppercase tracking-widest rounded-full shadow-lg shadow-indigo-100">
+                                        Transcript
+                                    </Badge>
+                                    <div className="h-4 w-px bg-slate-200" />
+                                    <div className="flex items-center gap-4">
+                                        <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-600">
+                                            <Clock className="w-3 h-3" />
+                                            {selectedTranscript && formatDuration(selectedTranscript.duration)}
+                                        </div>
+                                        <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-400">
+                                            <Users className="w-3 h-3" />
+                                            {selectedTranscript?.participants?.length || 1} Participants
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 pr-8">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-8 rounded-lg border-slate-200 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-all gap-2 px-3 shadow-sm"
+                                        onClick={() => setIsFullScreen(!isFullScreen)}
+                                    >
+                                        {isFullScreen ? (
+                                            <>
+                                                <ArrowUpDown className="w-3.5 h-3.5 transform rotate-45" />
+                                                <span className="text-[9px] font-black uppercase tracking-widest">Minimize</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <ExternalLink className="w-3.5 h-3.5" />
+                                                <span className="text-[9px] font-black uppercase tracking-widest">Full Screen</span>
+                                            </>
+                                        )}
+                                    </Button>
+                                </div>
+                            </div>
+                            <DialogTitle className="text-xl font-black text-slate-900 tracking-tight font-outfit uppercase leading-tight max-w-4xl truncate">
+                                {selectedTranscript?.title}
+                            </DialogTitle>
+                        </div>
+                    </DialogHeader>
+
+                    <div className="flex-1 overflow-hidden flex bg-white min-h-0">
+                        {/* Sidebar: Participants */}
+                        <div className={cn(
+                            "shrink-0 border-r border-slate-100/50 p-6 bg-slate-50/30 overflow-y-auto transition-all",
+                            isFullScreen ? "w-80" : "w-64"
+                        )}>
+                            <div className="space-y-8">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <div className="w-1 h-4 bg-indigo-600 rounded-full" />
+                                        <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em]">Call Roster</h3>
+                                    </div>
+                                    <div className="space-y-3">
+                                        {(selectedTranscript?.participants || [selectedTranscript?.host_email]).map((p, i) => (
+                                            <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-slate-100 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
+                                                <Avatar className="w-8 h-8 rounded-lg shadow-inner relative z-10 shrink-0">
+                                                    <AvatarFallback className={cn("text-[10px] font-black text-white", i === 0 ? "bg-indigo-600" : i === 1 ? "bg-purple-600" : "bg-teal-600")}>
+                                                        {getInitials(p || '??')}
+                                                    </AvatarFallback>
+                                                </Avatar>
+                                                <div className="flex flex-col min-w-0 relative z-10">
+                                                    <span className="text-[11px] font-black text-slate-900 truncate uppercase tracking-tight">{p?.split('@')[0]}</span>
+                                                    <span className="text-[9px] font-bold text-slate-400 truncate opacity-70 italic">{p}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="p-5 rounded-2xl bg-indigo-600 text-white relative overflow-hidden shadow-xl shadow-indigo-100">
+                                    <Brain className="w-5 h-5 mb-3 opacity-50" />
+                                    <h4 className="text-[11px] font-black uppercase tracking-widest mb-1">AI Ready</h4>
+                                    <p className="text-[9px] font-bold opacity-80 leading-relaxed uppercase tracking-widest">Transcript processed successfully.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Main: Transcript */}
+                        <div className="flex-1 flex flex-col min-w-0 bg-white">
+                            <div className="px-8 py-3 bg-slate-50/50 border-b border-slate-100 shrink-0">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <MessageSquare className="w-4 h-4 text-slate-400" />
+                                        <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Conversation Record</h3>
+                                    </div>
+                                    <div className="relative w-72">
+                                        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                                        <Input
+                                            placeholder="Find keywords in script..."
+                                            className="pl-9 h-8 bg-white border-slate-200 rounded-lg text-[12px] font-medium"
+                                            value={transcriptSearch}
+                                            onChange={(e) => setTranscriptSearch(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar">
+                                <div className="px-8 py-8">
+                                    {loadingDetails ? (
+                                        <div className="h-full flex flex-col items-center justify-center space-y-6 py-32">
+                                            <div className="relative">
+                                                <div className="h-12 w-12 rounded-full border-4 border-slate-100 border-t-indigo-600 animate-spin" />
+                                                <Brain className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 text-indigo-600 opacity-50" />
+                                            </div>
+                                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Accessing Transcripts...</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-10 pb-24 max-w-4xl mx-auto">
+                                            {selectedTranscript?.sentences?.filter(s =>
+                                                !transcriptSearch || s.text.toLowerCase().includes(transcriptSearch.toLowerCase()) || (s.speaker_name || '').toLowerCase().includes(transcriptSearch.toLowerCase())
+                                            ).map((s, i) => (
+                                                <div key={i} className="group relative">
+                                                    <div className="flex items-start gap-6">
+                                                        <div className="w-16 shrink-0 pt-1 sticky top-0">
+                                                            <span className="text-[10px] font-black text-slate-400 bg-white px-2 py-1 rounded-lg border border-slate-100 tabular-nums inline-block w-full text-center shadow-xs">
+                                                                {Math.floor(s.start_time / 60)}:{(Math.floor(s.start_time % 60)).toString().padStart(2, '0')}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="flex-1 min-w-0 space-y-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="h-1.5 w-1.5 rounded-full bg-indigo-600 shadow-[0_0_8px_rgba(79,70,229,0.5)]" />
+                                                                <span className="text-[11px] font-black text-indigo-600 uppercase tracking-tight">
+                                                                    {highlightText(s.speaker_name || 'Prospect', transcriptSearch)}
+                                                                </span>
+                                                            </div>
+                                                            <div className="bg-white border border-slate-100 p-6 rounded-2xl rounded-tl-none shadow-sm transition-all duration-300 group-hover:shadow-md group-hover:bg-slate-50/20 group-hover:border-indigo-100/50">
+                                                                <p className="text-[15px] text-slate-600 leading-relaxed font-medium tracking-tight whitespace-normal">
+                                                                    {highlightText(s.text, transcriptSearch)}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </div>
+    );
+}

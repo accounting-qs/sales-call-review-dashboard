@@ -11,8 +11,10 @@ export interface User {
     createdAt: Timestamp;
 }
 
+export type CallType = 'evaluation' | 'followup';
+
 export interface Call {
-    id: string;
+    id: string; // firefliesId
     firefliesId: string;
     title: string;
     date: Timestamp;
@@ -22,39 +24,61 @@ export interface Call {
     prospectName: string;
     prospectCompany: string;
     transcriptUrl: string;
+    type: CallType;
     status: 'pending' | 'analyzing' | 'completed' | 'failed';
     rawTranscript: string;
     createdAt: Timestamp;
     analyzedAt: Timestamp | null;
 }
 
+export interface SectionScore {
+    score: number; // 0-10
+    notes: string;
+}
+
+export interface Call1Sections {
+    intro: SectionScore;
+    bizAnalysis: SectionScore;
+    challenges: SectionScore;
+    goals: SectionScore;
+    transition: SectionScore;
+    funnelFlow: SectionScore;
+    timeline: SectionScore;
+    roiCalc: SectionScore;
+    tempCheck: SectionScore;
+    priceDrop: SectionScore;
+    objections: SectionScore;
+    decisionLeadership: SectionScore;
+    booking: SectionScore;
+}
+
+export interface Call2Sections {
+    intro: SectionScore;
+    technicalQuestions: SectionScore;
+    sevenBehaviours: SectionScore;
+    refundExplanation: SectionScore;
+    tempCheckObjections: SectionScore;
+    rePriceDrop: SectionScore;
+    contractReview: SectionScore;
+    closing: SectionScore;
+}
+
 export interface Analysis {
     id: string;
     callId: string;
     repEmail: string;
-    totalScore: number; // 0-100 rescaled from 0-10 sections
-    dealRisk: 'low' | 'medium' | 'high';
+    callType: CallType;
+    totalScore: number;
+    dealRisk: 'low' | 'medium' | 'high' | 'critical';
+    scriptAlignment: 'aligned' | 'partially_aligned' | 'non_aligned';
     outcome: string;
+    leadSource?: string;
+    miscellaneous?: string;
+    callAnalysis?: string; // Summary of the call
     topCoachingPriorities: string[];
+    globalCapsTriggered: string[];
     analyzedAt: Timestamp;
-    sections: {
-        intro: SectionScore;
-        bizAnalysis: SectionScore;
-        challenges: SectionScore;
-        goals: SectionScore;
-        transition: SectionScore;
-        funnelFlow: SectionScore;
-        timeline: SectionScore;
-        roiCalc: SectionScore;
-        tempCheck: SectionScore;
-        objections: SectionScore;
-        nextSteps: SectionScore;
-    };
-}
-
-export interface SectionScore {
-    score: number; // 0-10
-    notes: string;
+    sections: Call1Sections | Call2Sections;
 }
 
 export interface Rep {
@@ -89,7 +113,9 @@ export interface ReferenceDoc {
     fileName: string;
     type: 'pdf' | 'docx' | 'txt';
     status: 'uploading' | 'indexing' | 'indexed' | 'error';
-    geminiDocId: string;
+    geminiDocId?: string;
+    enabledForCall1: boolean;
+    enabledForCall2: boolean;
     uploadedAt: Timestamp;
     size?: number;
     chunksCount?: number;

@@ -9,7 +9,7 @@ import {
     query,
     getDocs
 } from 'firebase/firestore';
-import { Rep, Call, Analysis, TrainingPlan } from '@/types';
+import { Rep, Call, Analysis, TrainingPlan, ReferenceDoc, Call1Sections, Call2Sections } from '@/types';
 
 const REPS: Rep[] = [
     {
@@ -96,13 +96,14 @@ const generateJasonCalls = (): { calls: Call[]; analyses: Analysis[] } => {
             prospectName: p.name,
             prospectCompany: p.company,
             transcriptUrl: `https://fireflies.ai/c/${callId}`,
+            type: 'evaluation',
             status: 'completed',
             rawTranscript: 'Example transcript content...',
             createdAt: Timestamp.fromDate(callDate),
             analyzedAt: Timestamp.fromDate(callDate),
         };
 
-        const sectionScores = {
+        const sectionScores: Call1Sections = {
             intro: { score: Math.round((7 + Math.random() * 2) * 10) / 10, notes: 'Good tone and frame setting.' },
             bizAnalysis: { score: Math.round((7 + Math.random() * 1) * 10) / 10, notes: 'Deep probe into current situation.' },
             challenges: { score: Math.round((5 + Math.random() * 2) * 10) / 10, notes: 'Identified core bottlenecks.' },
@@ -112,21 +113,28 @@ const generateJasonCalls = (): { calls: Call[]; analyses: Analysis[] } => {
             timeline: { score: Math.round((5 + Math.random() * 1) * 10) / 10, notes: 'Pushed for urgency.' },
             roiCalc: { score: Math.round((4 + Math.random() * 2) * 10) / 10, notes: 'Could be clearer on the numbers.' },
             tempCheck: { score: Math.round((5 + Math.random() * 2) * 10) / 10, notes: 'Checked for alignment.' },
+            priceDrop: { score: Math.round((6 + Math.random() * 2) * 10) / 10, notes: 'Direct delivery of price.' },
             objections: { score: i === 0 ? 2.1 : Math.round((2 + Math.random() * 3) * 10) / 10, notes: 'Needs major work on handling pushback.' },
-            nextSteps: { score: Math.round((5 + Math.random() * 2) * 10) / 10, notes: 'Clear action items.' },
+            decisionLeadership: { score: Math.round((5 + Math.random() * 2) * 10) / 10, notes: 'Clear action items.' },
+            booking: { score: Math.round((8 + Math.random() * 2) * 10) / 10, notes: 'Successfully booked follow up.' },
         };
 
-        // Rescale score to 0-100 total
-        const totalScoreRaw = Object.values(sectionScores).reduce((acc, s) => acc + s.score, 0);
-        const totalScore = Math.round((totalScoreRaw / 110) * 100);
+        // Rescale score to 0-100 total (13 sections now)
+        const totalScoreRaw = Object.values(sectionScores).reduce((acc: number, s: any) => acc + s.score, 0);
+        const totalScore = Math.round((totalScoreRaw / 130) * 100);
 
         const analysis: Analysis = {
             id: callId,
             callId: callId,
             repEmail: 'jasonbern@quantum-scaling.com',
+            callType: 'evaluation',
             totalScore: totalScore,
-            dealRisk: p.risk,
+            dealRisk: p.risk === 'low' ? 'low' : (p.risk === 'high' ? 'high' : 'medium'),
+            scriptAlignment: 'aligned',
             outcome: p.outcome,
+            leadSource: 'Paid (Facebook)',
+            callAnalysis: `In this evaluation call with ${p.name}, Jason did a solid job establishing the frame early on. He successfully navigated the business analysis phase, identifying key bottlenecks in their current funnel. The prospect showed strong interest during the ROI calculation, though there was some minor pushback on the immediate timeline which Jason handled by re-anchoring to the goals.`,
+            globalCapsTriggered: [],
             topCoachingPriorities: ['Objection Handling', 'ROI Calculation', 'Urgency Framing'],
             analyzedAt: Timestamp.fromDate(callDate),
             sections: sectionScores,
@@ -206,6 +214,75 @@ export const seedData = async () => {
     };
     const planRef = doc(db, 'training_plans', melissaPlan.repEmail);
     batch.set(planRef, melissaPlan);
+
+    // Seed Knowledge Base
+    const knowledgeDocs: ReferenceDoc[] = [
+        {
+            id: 'qs-sales-script-v1',
+            name: 'QS Sales Team Script',
+            fileName: 'QS_Sales_Script_v1.pdf',
+            type: 'pdf',
+            status: 'indexed',
+            enabledForCall1: true,
+            enabledForCall2: false,
+            uploadedAt: Timestamp.now(),
+        },
+        {
+            id: 'framework-v7-1',
+            name: 'Quantum Scaling AI Call Review Framework v7.1',
+            fileName: 'Framework_v7.1.pdf',
+            type: 'pdf',
+            status: 'indexed',
+            enabledForCall1: true,
+            enabledForCall2: false,
+            uploadedAt: Timestamp.now(),
+        },
+        {
+            id: 'qs-call-2-script',
+            name: 'QS Call 2 Script',
+            fileName: 'QS_Call_2_Script.pdf',
+            type: 'pdf',
+            status: 'indexed',
+            enabledForCall1: false,
+            enabledForCall2: true,
+            uploadedAt: Timestamp.now(),
+        },
+        {
+            id: 'call-2-framework',
+            name: 'Call 2 Quantum Scaling AI Call Review Framework',
+            fileName: 'Call2_Framework.pdf',
+            type: 'pdf',
+            status: 'indexed',
+            enabledForCall1: false,
+            enabledForCall2: true,
+            uploadedAt: Timestamp.now(),
+        },
+        {
+            id: 'objections-finance',
+            name: 'QS Sales Team Script Objections & Finance Terms',
+            fileName: 'Objections_and_Finance.pdf',
+            type: 'pdf',
+            status: 'indexed',
+            enabledForCall1: true,
+            enabledForCall2: true,
+            uploadedAt: Timestamp.now(),
+        },
+        {
+            id: 'persona-overview',
+            name: 'Quantum Scaling Persona & Business Overview',
+            fileName: 'Persona_Overview.pdf',
+            type: 'pdf',
+            status: 'indexed',
+            enabledForCall1: true,
+            enabledForCall2: true,
+            uploadedAt: Timestamp.now(),
+        }
+    ];
+
+    knowledgeDocs.forEach(docData => {
+        const docRef = doc(db, 'knowledge', docData.id);
+        batch.set(docRef, docData);
+    });
 
     await batch.commit();
     console.log('Seed data committed successfully');

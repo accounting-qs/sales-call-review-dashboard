@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { Shell } from "@/components/layout/Shell";
 import { cn } from "@/lib/utils";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -23,14 +23,11 @@ export default function RootLayout({
         inter.className,
         inter.variable,
         outfit.variable,
-        "h-full bg-slate-50 text-slate-900 overflow-x-hidden antialiased flex"
+        "h-full bg-slate-50 text-slate-900 overflow-x-hidden antialiased"
       )}>
-        <Sidebar aria-label="Main Sidebar" />
-        <main className="flex-1 ml-[300px] min-h-screen flex flex-col relative">
-          <div className="flex-1 flex flex-col">
-            {children}
-          </div>
-        </main>
+        <Shell>
+          {children}
+        </Shell>
       </body>
     </html>
   );

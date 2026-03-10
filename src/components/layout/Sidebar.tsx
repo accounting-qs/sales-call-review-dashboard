@@ -11,7 +11,10 @@ import {
     User as UserIcon,
     LayoutDashboard,
     Settings as SettingsIcon,
-    Phone
+    Phone,
+    BookOpen,
+    Brain,
+    RefreshCw
 } from 'lucide-react';
 import { useReps } from '@/lib/hooks/useReps';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -82,21 +85,59 @@ export function Sidebar() {
                     {/* Main Links */}
                     <div className="mb-6">
                         {isManager ? (
-                            <Link
-                                href="/dashboard"
-                                className={cn(
-                                    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1",
-                                    pathname === '/dashboard'
-                                        ? "bg-slate-100 text-slate-900"
-                                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
-                                )}
-                            >
-                                <LayoutDashboard className="w-4 h-4" />
-                                Team Overview
-                                <Badge variant="secondary" className="ml-auto bg-slate-200 text-slate-600 text-[10px] px-1.5 py-0">
-                                    {reps.length} ACTIVE
-                                </Badge>
-                            </Link>
+                            <>
+                                <Link
+                                    href="/dashboard"
+                                    className={cn(
+                                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1",
+                                        pathname === '/dashboard'
+                                            ? "bg-slate-100 text-slate-900"
+                                            : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                                    )}
+                                >
+                                    <LayoutDashboard className="w-4 h-4" />
+                                    Team Overview
+                                    <Badge variant="secondary" className="ml-auto bg-slate-200 text-slate-600 text-[10px] px-1.5 py-0">
+                                        {reps.length} ACTIVE
+                                    </Badge>
+                                </Link>
+                                <Link
+                                    href="/knowledge"
+                                    className={cn(
+                                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1",
+                                        pathname === '/knowledge'
+                                            ? "bg-slate-100 text-slate-900"
+                                            : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                                    )}
+                                >
+                                    <BookOpen className="w-4 h-4" />
+                                    Knowledge Base
+                                </Link>
+                                <Link
+                                    href="/dashboard/sync"
+                                    className={cn(
+                                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1",
+                                        pathname === '/dashboard/sync'
+                                            ? "bg-slate-100 text-slate-900"
+                                            : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                                    )}
+                                >
+                                    <RefreshCw className="w-4 h-4" />
+                                    Sync Fireflies
+                                </Link>
+                                <Link
+                                    href="/dashboard/settings/ai"
+                                    className={cn(
+                                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1",
+                                        pathname === '/dashboard/settings/ai'
+                                            ? "bg-slate-100 text-slate-900"
+                                            : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                                    )}
+                                >
+                                    <Brain className="w-4 h-4" />
+                                    AI Instructions
+                                </Link>
+                            </>
                         ) : (
                             <>
                                 <Link

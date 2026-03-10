@@ -29,14 +29,13 @@ export function SkillRadar({ data }: SkillRadarProps) {
                     Performance across the 11 key call sections
                 </CardDescription>
             </CardHeader>
-            <CardContent className="h-[350px] pt-4">
+            <CardContent className="h-[350px] pt-4 flex items-center justify-center">
                 <ResponsiveContainer width="100%" height="100%">
                     <RadarChart cx="50%" cy="50%" outerRadius="80%" data={data}>
-                        <PolarGrid stroke="#e2e8f0" strokeDasharray="3 3" />
+                        <PolarGrid stroke="#f1f5f9" gridType="circle" />
                         <PolarAngleAxis
                             dataKey="subject"
-                            tick={{ fill: '#64748b', fontSize: 10, fontWeight: 500 }}
-                            stroke="#cbd5e1"
+                            tick={{ fill: '#64748b', fontSize: 9, fontWeight: 700 }}
                         />
                         <PolarRadiusAxis
                             angle={30}
@@ -48,18 +47,20 @@ export function SkillRadar({ data }: SkillRadarProps) {
                             name="Avg. Score"
                             dataKey="A"
                             stroke="#6366f1"
-                            strokeWidth={2}
+                            strokeWidth={3}
                             fill="#6366f1"
-                            fillOpacity={0.15}
+                            fillOpacity={0.4}
+                            dot={{ r: 3, fill: '#6366f1', strokeWidth: 2, stroke: '#fff' }}
                         />
                         <Tooltip
                             contentStyle={{
-                                borderRadius: '8px',
+                                borderRadius: '12px',
                                 border: 'none',
-                                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                                fontSize: '12px',
-                                fontWeight: 600,
-                                color: '#1e293b'
+                                boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                color: '#1e293b',
+                                textTransform: 'uppercase'
                             }}
                         />
                     </RadarChart>

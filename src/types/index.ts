@@ -29,6 +29,8 @@ export interface Call {
     rawTranscript: string;
     createdAt: Timestamp;
     analyzedAt: Timestamp | null;
+    score: number; // Global AI score
+    outcome: string; // Deal outcome (Closed, Demo Scheduled, etc)
 }
 
 export interface SectionScore {

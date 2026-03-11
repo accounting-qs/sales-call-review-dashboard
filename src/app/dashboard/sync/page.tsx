@@ -15,6 +15,7 @@ import {
     FileText,
     MessageSquare,
     ChevronRight,
+    FileCode,
     Settings as SettingsIcon,
     AlertCircle,
     Save
@@ -25,6 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import {
     Select,
     SelectContent,
@@ -86,6 +88,28 @@ interface FirefliesTranscript {
     }>;
 }
 
+const DEFAULT_TEMPLATE = `==📊 **New Audited Call** ==
+
+👤 **Rep:** {{rep}}
+👥 **Prospect:** {{title}}
+📅 **Date:** {{date}}
+🔗 **Link:** {{link}}
+⏱️ **Duration:** {{duration}} min
+
+<details>
+<summary>🔎 **Click to see full AI Review**</summary>
+
+{{analysis}}
+
+**Quick Stats:**
+- **Alignment:** {{alignment}}
+- **Score:** {{score}}/10
+- **Risk:** {{risk}}
+
+[Full Report]({{link}})
+[Recording]({{transcript}})
+</details>`;
+
 export default function SyncPage() {
     const [transcripts, setTranscripts] = useState<FirefliesTranscript[]>([]);
     const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
@@ -104,7 +128,9 @@ export default function SyncPage() {
         evaluationKeywords: 'Evaluation Call, Business Evaluation',
         followupKeywords: 'Follow-up',
         excludedKeywords: 'Test, Internal',
-        defaultAgent: 'none'
+        defaultAgent: 'none',
+        clickupWebhook: '',
+        clickupTemplate: DEFAULT_TEMPLATE
     });
     const [savingSettings, setSavingSettings] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -145,7 +171,10 @@ export default function SyncPage() {
             const docRef = doc(db, 'settings', 'fireflies_pipeline');
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
-                setPipelineSettings(docSnap.data() as any);
+                setPipelineSettings(prev => ({
+                    ...prev,
+                    ...docSnap.data()
+                }));
             }
         } catch (error) {
             console.error("Error loading settings:", error);
@@ -352,6 +381,47 @@ export default function SyncPage() {
                                             </SelectContent>
                                         </Select>
                                         <p className="text-[9px] text-slate-400 font-bold uppercase italic">Agent to use if title matches no keywords</p>
+                                    </div>
+
+                                    {/* ClickUp Webhook */}
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-1 rounded bg-slate-100">
+                                                <ExternalLink className="w-3 h-3 text-slate-600" />
+                                            </div>
+                                            <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">ClickUp / n8n Webhook URL</Label>
+                                        </div>
+                                        <Input
+                                            placeholder="https://api.clickup.com/... or n8n webhook url"
+                                            className="h-11 rounded-xl bg-slate-50 border-slate-100 text-[11px] font-mono"
+                                            value={pipelineSettings.clickupWebhook}
+                                            onChange={(e) => setPipelineSettings(prev => ({ ...prev, clickupWebhook: e.target.value }))}
+                                        />
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase italic">Replaces Direct API calls if provided</p>
+                                    </div>
+
+                                    {/* ClickUp Template */}
+                                    <div className="space-y-3 pb-4">
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-1 rounded bg-slate-100">
+                                                <FileCode className="w-3 h-3 text-slate-600" />
+                                            </div>
+                                            <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Message Template (Markdown)</Label>
+                                        </div>
+                                        <Textarea
+                                            placeholder="Enter message template..."
+                                            className="min-h-[200px] rounded-xl bg-slate-50 border-slate-100 text-[11px] font-mono leading-relaxed"
+                                            value={pipelineSettings.clickupTemplate}
+                                            onChange={(e) => setPipelineSettings(prev => ({ ...prev, clickupTemplate: e.target.value }))}
+                                        />
+                                        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                                            <p className="text-[9px] text-slate-400 font-bold uppercase mb-2">Available Placeholders:</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {['{{rep}}', '{{title}}', '{{date}}', '{{link}}', '{{duration}}', '{{analysis}}', '{{score}}', '{{risk}}', '{{alignment}}', '{{transcript}}'].map(p => (
+                                                    <code key={p} className="text-[9px] bg-white px-1.5 py-0.5 rounded border border-slate-100 text-indigo-600">{p}</code>
+                                                ))}
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <div className="pt-6">

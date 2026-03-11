@@ -101,6 +101,8 @@ const generateJasonCalls = (): { calls: Call[]; analyses: Analysis[] } => {
             rawTranscript: 'Example transcript content...',
             createdAt: Timestamp.fromDate(callDate),
             analyzedAt: Timestamp.fromDate(callDate),
+            score: p.baseScore,
+            outcome: p.outcome
         };
 
         const sectionScores: Call1Sections = {

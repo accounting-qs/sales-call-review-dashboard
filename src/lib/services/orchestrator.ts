@@ -122,17 +122,29 @@ export async function processSingleCall(t: any, callType: 'evaluation' | 'follow
     // 5. Save to Firestore
     await saveAnalysisToFirestore(t, callMetadata, analysis);
 
-    // 6. Notify ClickUp
-    const clickUpMsg = formatClickUpMessage(
-        callType,
-        t.host_email,
-        t.title,
-        new Date(t.date).toLocaleDateString(),
-        t.duration,
-        `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/calls/${t.id}`,
-        t.transcript_url
-    );
-    await sendClickUpNotification(clickUpMsg);
+    // 6. Notify ClickUp (Non-blocking but awaited)
+    try {
+        const settingsRef = doc(db, "settings", "fireflies_pipeline");
+        const settingsSnap = await getDoc(settingsRef);
+        const settings = settingsSnap.exists() ? settingsSnap.data() : {};
+
+        const clickUpMsg = formatClickUpMessage(
+            callType,
+            t.host_email,
+            t.title,
+            new Date(t.date).toLocaleDateString(),
+            t.duration,
+            `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/calls/${t.id}`,
+            t.transcript_url,
+            analysis,
+            settings.clickupTemplate
+        );
+
+        console.log(`[Orchestrator] Sending ClickUp notification for ${t.title}...`);
+        await sendClickUpNotification(clickUpMsg, settings.clickupWebhook);
+    } catch (clickupError) {
+        console.error("[Orchestrator] ClickUp notification failed but analysis was saved:", clickupError);
+    }
 
     console.log(`[Orchestrator] Successfully completed analysis for "${t.title}"`);
     return { callId: t.id, analysisId: t.id };
@@ -153,6 +165,8 @@ async function saveAnalysisToFirestore(t: any, metadata: any, analysis: Analysis
         firefliesId: t.id,
         duration: t.duration,
         status: 'completed',
+        score: analysis.totalScore,
+        outcome: analysis.outcome || 'Analyzed',
         createdAt: Timestamp.now(),
         analyzedAt: Timestamp.now()
     });

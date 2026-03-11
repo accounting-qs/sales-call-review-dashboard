@@ -5,7 +5,7 @@ import { getPromptSettings } from "./promptSettings";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const STORE_ID = process.env.GEMINI_FILE_SEARCH_STORE_ID;
-const MODEL = process.env.GEMINI_MODEL || "gemini-1.5-pro";
+const MODEL = process.env.GEMINI_MODEL || "gemini-pro-latest";
 
 export async function analyzeSalesCall(
     transcript: string,
@@ -50,11 +50,13 @@ export async function analyzeSalesCall(
         contents: [
             { role: "user", parts: [{ text: systemPrompt + "\n\n" + userPromptContent }] }
         ],
-        tools: STORE_ID ? [{
-            file_search: {
-                file_search_store_names: [STORE_ID]
-            }
-        }] : []
+        // NOTE: file_search is currently disabled because the STORE_ID in .env.local 
+        // frequently encounters permission issues or does not exist.
+        // tools: STORE_ID ? [{
+        //     file_search: {
+        //         file_search_store_names: [STORE_ID]
+        //     }
+        // }] : []
     };
 
     console.log(`[Gemini] Starting analysis for ${metadata.title} using ${MODEL}...`);

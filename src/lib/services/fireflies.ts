@@ -118,6 +118,10 @@ export async function getTranscriptDetails(transcriptId: string): Promise<Firefl
 }
 
 export function formatTranscript(transcript: FirefliesTranscript): string {
+    if (!transcript || !transcript.sentences) {
+        console.warn("[Fireflies] No sentences found in transcript object");
+        return "Transcript content is not yet available from Fireflies.";
+    }
     return transcript.sentences
         .map(s => {
             const minutes = Math.floor(s.start_time / 60);

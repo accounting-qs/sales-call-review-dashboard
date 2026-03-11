@@ -1,35 +1,89 @@
+import { Analysis } from "@/types";
+
 export interface ClickUpMessage {
-    content: string;
-    content_format?: "text/md";
+    text: string;
+    content?: string;
 }
 
-export async function sendClickUpNotification(message: string): Promise<void> {
+export async function sendClickUpNotification(message: string, overrideWebhookUrl?: string) {
+    const webhookUrl = overrideWebhookUrl || process.env.CLICKUP_WEBHOOK_URL;
+
+    // Fallback to Direct API if no Webhook provided
+    if (!webhookUrl) {
+        return await sendDirectClickUpMessage(message);
+    }
+
+    console.log(`[ClickUp] Sending notification to webhook: ${webhookUrl}`);
+
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+        const response = await fetch(webhookUrl, {
+            method: 'POST',
+            signal: controller.signal,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text: message,
+                content: message // Support both naming conventions
+            })
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`Webhook failed with status: ${response.status}`);
+        }
+    } catch (error: any) {
+        if (error.name === 'AbortError') {
+            console.error("[ClickUp] Webhook timed out after 10s");
+        } else {
+            console.error("[ClickUp] Webhook error:", error.message);
+        }
+        throw error;
+    }
+}
+
+async function sendDirectClickUpMessage(message: string) {
     const apiKey = process.env.CLICKUP_API_KEY;
     const workspaceId = process.env.CLICKUP_WORKSPACE_ID;
     const channelId = process.env.CLICKUP_CHANNEL_ID;
 
     if (!apiKey || !workspaceId || !channelId) {
-        console.warn('ClickUp credentials missing, skipping notification');
+        console.warn("[ClickUp] Missing direct API configuration. Skipping notification.");
         return;
     }
 
-    const url = `https://api.clickup.com/api/v3/workspaces/${workspaceId}/chat/channels/${channelId}/messages`;
+    try {
+        const url = `https://api.clickup.com/api/v3/workspaces/${workspaceId}/chat/channels/${channelId}/messages`;
+        console.log(`[ClickUp] Sending direct to: ${url}`);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Authorization': apiKey, // Brief says "API key in header"
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            content: message,
-            content_format: "text/md"
-        }),
-    });
+        const response = await fetch(url, {
+            method: 'POST',
+            signal: controller.signal,
+            headers: {
+                'Authorization': apiKey,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ content: message })
+        });
 
-    if (!response.ok) {
-        const error = await response.text();
-        console.error('ClickUp notification failed:', error);
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`ClickUp API failed (${response.status}): ${errorText}`);
+        }
+    } catch (error: any) {
+        if (error.name === 'AbortError') {
+            console.error("[ClickUp] Direct ClickUp API timed out after 10s");
+        } else {
+            console.error("[ClickUp] Direct API failed:", error.message);
+        }
+        throw error;
     }
 }
 
@@ -40,17 +94,52 @@ export function formatClickUpMessage(
     date: string,
     duration: number,
     docLink: string,
-    transcriptUrl: string
+    transcriptUrl: string,
+    analysis?: Analysis,
+    template?: string
 ): string {
-    const typeLabel = callType === 'evaluation' ? 'Business Evaluation Call' : 'Follow-Up Call (Call 2)';
+    const DEFAULT_TEMPLATE = `==📊 **New Audited Call** ==
 
-    return `**[${typeLabel}]**
+👤 **Rep:** {{rep}}
+👥 **Prospect:** {{title}}
+📅 **Date:** {{date}}
+🔗 **Link:** {{link}}
+⏱️ **Duration:** {{duration}} min
 
-**Rep:** ${repEmail}
-**Prospect:** ${title}
-**Date:** ${date}
-**Duration:** ${duration} min
+<details>
+<summary>🔎 **Click to see full AI Review**</summary>
 
-**Full Analysis:** ${docLink}
-**Transcript:** ${transcriptUrl}`;
+{{analysis}}
+
+**Quick Stats:**
+- **Alignment:** {{alignment}}
+- **Score:** {{score}}/10
+- **Risk:** {{risk}}
+
+[Full Report]({{link}})
+[Recording]({{transcript}})
+</details>`;
+
+    let message = template || DEFAULT_TEMPLATE;
+
+    // Placeholders mapping
+    const values: Record<string, string> = {
+        '{{rep}}': repEmail,
+        '{{title}}': title,
+        '{{date}}': date,
+        '{{link}}': docLink,
+        '{{duration}}': duration.toString(),
+        '{{analysis}}': analysis?.callAnalysis || analysis?.outcome || 'Analysis in progress...',
+        '{{score}}': (analysis?.totalScore || 0).toString(),
+        '{{risk}}': (analysis?.dealRisk || 'N/A').toUpperCase(),
+        '{{alignment}}': (analysis?.scriptAlignment || 'N/A').toUpperCase(),
+        '{{transcript}}': transcriptUrl
+    };
+
+    // Replace all placeholders
+    Object.entries(values).forEach(([key, value]) => {
+        message = message.split(key).join(value);
+    });
+
+    return message;
 }

@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Upload, Trash2 } from 'lucide-react';
 import { db } from '@/lib/firebase';
+import { cn } from '@/lib/utils';
 import { collection, onSnapshot, doc, addDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 
 export function RAGDocsSection() {
@@ -29,20 +30,42 @@ export function RAGDocsSection() {
             if (!file) return;
             setUploading(true);
             try {
+                // Formatting size for UI
                 const sizeKB = Math.round(file.size / 1024);
                 const sizeStr = sizeKB > 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`;
                 
+                // 1. Upload exactly to Google Gemini API
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch('/api/rag/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const errObj = await response.json();
+                    throw new Error(errObj.error || 'Upload failed due to an unknown server error.');
+                }
+
+                const data = await response.json();
+                const geminiFile = data.file;
+
+                // 2. Save reference into Firebase
                 await addDoc(collection(db, 'knowledge_base'), {
                     name: file.name,
                     sizeStr,
-                    status: 'Indexed',
-                    chunks: Math.floor(Math.random() * 200) + 10,
+                    status: geminiFile.state === 'PROCESSING' ? 'Indexing...' : 'Active',
+                    geminiFileId: geminiFile.name, // E.g., 'files/123xyz'
+                    geminiFileUri: geminiFile.uri, // E.g., 'https://generativelanguage.googleapis.com/.../123xyz'
+                    mimeType: geminiFile.mimeType,
+                    chunks: 'Managed by Gemini', // Gemini abstracts chunking completely out
                     uploadedAt: new Date().toISOString(),
                     isActive: true
                 });
-            } catch (err) {
+            } catch (err: any) {
                 console.error(err);
-                alert('Upload failed.');
+                alert(`Upload failed: ${err.message}`);
             } finally {
                 setUploading(false);
             }
@@ -50,12 +73,26 @@ export function RAGDocsSection() {
         input.click();
     };
 
-    const handleDelete = async (id: string, name: string) => {
-        if (!confirm(`Are you sure you want to permanently delete ${name}?`)) return;
+    const handleDelete = async (docObj: any) => {
+        if (!confirm(`Are you sure you want to permanently delete ${docObj.name}?`)) return;
         try {
-            await deleteDoc(doc(db, 'knowledge_base', id));
+            // If it has a Gemini ID, wipe it from Google servers first
+            if (docObj.geminiFileId) {
+                const res = await fetch('/api/rag/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fileName: docObj.geminiFileId })
+                });
+                if (!res.ok) {
+                    console.warn("Failed to delete from Gemini File API, but proceeding to remove from Firebase.");
+                }
+            }
+            
+            // Delete from UI database
+            await deleteDoc(doc(db, 'knowledge_base', docObj.id));
         } catch (err) {
             console.error(err);
+            alert("Failed to delete document.");
         }
     };
 
@@ -109,11 +146,14 @@ export function RAGDocsSection() {
                                 <TableCell>
                                     <div className="flex flex-col">
                                         <span className="text-xs font-medium text-slate-600">{d.sizeStr}</span>
-                                        <span className="text-[10px] text-slate-400">{d.chunks} chunks</span>
+                                        <span className="text-[10px] text-slate-400">{d.chunks || 'Managed by Gemini'}</span>
                                     </div>
                                 </TableCell>
                                 <TableCell>
-                                    <Badge className="bg-green-50 text-green-600 border-green-100 text-[10px] px-2 py-0.5 font-bold uppercase tracking-widest">
+                                    <Badge className={cn(
+                                        "text-[10px] px-2 py-0.5 font-bold uppercase tracking-widest",
+                                        d.status === 'Indexing...' ? "bg-amber-50 text-amber-600 border-amber-100 animate-pulse" : "bg-green-50 text-green-600 border-green-100"
+                                    )}>
                                         {d.status}
                                     </Badge>
                                 </TableCell>
@@ -124,7 +164,7 @@ export function RAGDocsSection() {
                                     />
                                 </TableCell>
                                 <TableCell className="text-right pr-8">
-                                    <Button onClick={() => handleDelete(d.id, d.name)} variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg">
+                                    <Button onClick={() => handleDelete(d)} variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg">
                                         <Trash2 className="w-4 h-4" />
                                     </Button>
                                 </TableCell>

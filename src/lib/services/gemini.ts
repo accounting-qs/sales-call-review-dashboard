@@ -5,7 +5,7 @@ import { getPromptSettings } from "./promptSettings";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const STORE_ID = process.env.GEMINI_FILE_SEARCH_STORE_ID;
-const MODEL = process.env.GEMINI_MODEL || "gemini-pro-latest";
+const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-pro";
 
 export async function analyzeSalesCall(
     transcript: string,
@@ -15,10 +15,23 @@ export async function analyzeSalesCall(
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not set");
 
     // 1. Fetch relevant reference docs
-    const field = callType === 'evaluation' ? 'enabledForCall1' : 'enabledForCall2';
-    const q = query(collection(db, 'knowledge'), where(field, '==', true));
+    const q = query(collection(db, 'knowledge_base'), where('isActive', '==', true));
     const docsSnapshot = await getDocs(q);
-    const selectedDocs = docsSnapshot.docs.map(d => d.data().name);
+    const selectedFileParts: any[] = [];
+    const selectedDocNames: string[] = [];
+    
+    docsSnapshot.docs.forEach(d => {
+        const data = d.data();
+        if (data.geminiFileUri && data.mimeType) {
+            selectedDocNames.push(data.name);
+            selectedFileParts.push({
+                fileData: {
+                    mimeType: data.mimeType,
+                    fileUri: data.geminiFileUri
+                }
+            });
+        }
+    });
 
     // 2. Fetch specific instructions (Prompts) from Firestore
     const promptSettings = await getPromptSettings();
@@ -28,8 +41,8 @@ export async function analyzeSalesCall(
 
     const userPromptContent = `
         # REFERENCE DOCUMENTS TO USE
-        The following documents have been selected for this analysis from the RAG store. You MUST prioritize information from these specific sources:
-        ${selectedDocs.length > 0 ? selectedDocs.map(d => `- ${d}`).join('\n') : 'No specific documents selected. Use general framework knowledge.'}
+        Please strictly reference any internal documents or files provided in the data attachments alongside this prompt. They represent our canonical frameworks.
+        Prioritize information from these specific sources: ${selectedDocNames.join(', ')}
 
         # CALL INFORMATION
         **Call ID:** ${metadata.id}
@@ -48,19 +61,18 @@ export async function analyzeSalesCall(
 
     const body = {
         contents: [
-            { role: "user", parts: [{ text: systemPrompt + "\n\n" + userPromptContent }] }
-        ],
-        // NOTE: file_search is currently disabled because the STORE_ID in .env.local 
-        // frequently encounters permission issues or does not exist.
-        // tools: STORE_ID ? [{
-        //     file_search: {
-        //         file_search_store_names: [STORE_ID]
-        //     }
-        // }] : []
+            { 
+                role: "user", 
+                parts: [
+                    ...selectedFileParts, // Inject PDF documents directly into the context window
+                    { text: systemPrompt + "\n\n" + userPromptContent }
+                ] 
+            }
+        ]
     };
 
     console.log(`[Gemini] Starting analysis for ${metadata.title} using ${MODEL}...`);
-    console.log(`[Gemini] Selected Docs: ${selectedDocs.join(', ') || 'None'}`);
+    console.log(`[Gemini] Appended ${selectedFileParts.length} active documents to the context.`);
 
     const response = await fetch(url, {
         method: 'POST',

@@ -1,11 +1,10 @@
 import { Call, CallType, Analysis } from "@/types";
 import { db } from "../firebase";
-import { collection, query, where, getDocs, Timestamp } from "firebase/firestore";
+import { collection, query, where, getDocs, Timestamp, getDoc, doc } from "firebase/firestore";
 import { getPromptSettings } from "./promptSettings";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const STORE_ID = process.env.GEMINI_FILE_SEARCH_STORE_ID;
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-pro";
+const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-pro";
 
 export async function analyzeSalesCall(
     transcript: string,
@@ -13,6 +12,17 @@ export async function analyzeSalesCall(
     callType: CallType
 ): Promise<Partial<Analysis>> {
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not set");
+
+    // 0. Fetch the dynamic model selection from DB
+    let selectedModel = DEFAULT_MODEL;
+    try {
+        const pipelineSnap = await getDoc(doc(db, 'settings', 'fireflies_pipeline'));
+        if (pipelineSnap.exists() && pipelineSnap.data().aiModel) {
+            selectedModel = pipelineSnap.data().aiModel;
+        }
+    } catch (err) {
+        console.warn('Could not fetch dynamic model from settings. Using default.', err);
+    }
 
     // 1. Fetch relevant reference docs
     const q = query(collection(db, 'knowledge_base'), where('isActive', '==', true));
@@ -57,7 +67,7 @@ export async function analyzeSalesCall(
     `;
 
     // Direct API call to support file_search tool
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${GEMINI_API_KEY}`;
 
     const body = {
         contents: [
@@ -71,7 +81,7 @@ export async function analyzeSalesCall(
         ]
     };
 
-    console.log(`[Gemini] Starting analysis for ${metadata.title} using ${MODEL}...`);
+    console.log(`[Gemini] Starting analysis for ${metadata.title} using ${selectedModel}...`);
     console.log(`[Gemini] Appended ${selectedFileParts.length} active documents to the context.`);
 
     const response = await fetch(url, {

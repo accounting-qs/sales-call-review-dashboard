@@ -16,20 +16,57 @@ export function QASection() {
     const [runningAi, setRunningAi] = useState(false);
     const [aiResult, setAiResult] = useState('');
     
+    const [runningWebhook, setRunningWebhook] = useState(false);
+
     const handleTestSync = async () => {
         setRunningSync(true);
-        setTimeout(() => {
-            alert('Mock Sync Triggered for ' + (testCallId || 'Latest Calls'));
+        try {
+            const res = await fetch('/api/qa/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ callId: testCallId || undefined })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            alert(`Success: ${data.message}`);
+        } catch (err: any) {
+            alert(`Sync Failed: ${err.message}`);
+        } finally {
             setRunningSync(false);
-        }, 1500);
+        }
     };
 
     const handleTestAi = async () => {
         setRunningAi(true);
-        setTimeout(() => {
-            setAiResult('Mock AI Response: Analysis complete. Found 3 key areas of improvement in the provided excerpt.');
+        setAiResult('');
+        try {
+            const res = await fetch('/api/qa/ai', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: testPrompt })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            setAiResult(`Success! Evaluated using Gemini & your active RAG documents.\n\nRaw Output:\n${JSON.stringify(data.analysis, null, 2)}`);
+        } catch (err: any) {
+            setAiResult(`Analysis Failed: ${err.message}`);
+        } finally {
             setRunningAi(false);
-        }, 2000);
+        }
+    };
+
+    const handleTestWebhook = async () => {
+        setRunningWebhook(true);
+        try {
+            const res = await fetch('/api/qa/webhook', { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            alert(`Success: ${data.message}`);
+        } catch (err: any) {
+            alert(`Webhook Failed: ${err.message}`);
+        } finally {
+            setRunningWebhook(false);
+        }
     };
 
     return (
@@ -106,12 +143,14 @@ export function QASection() {
                             </div>
                             
                             {aiResult && (
-                                <div className="p-4 bg-green-50 rounded-xl border border-green-100 mt-4 space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <CheckCircle className="w-4 h-4 text-green-600" />
-                                        <span className="text-[10px] font-black text-green-700 uppercase tracking-widest">Test Successful</span>
+                                <div className="p-4 bg-slate-900 rounded-xl border border-slate-800 mt-4 space-y-2 overflow-hidden">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <CheckCircle className="w-4 h-4 text-green-400" />
+                                        <span className="text-[10px] font-black text-green-400 uppercase tracking-widest">Test Complete</span>
                                     </div>
-                                    <p className="text-sm text-green-900 font-medium">{aiResult}</p>
+                                    <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap overflow-auto max-h-[300px]">
+                                        {aiResult}
+                                    </pre>
                                 </div>
                             )}
                         </div>
@@ -129,10 +168,11 @@ export function QASection() {
                                 <p className="text-xs text-slate-500 font-medium">Sends a mock finalized analysis payload to the configured webhook destination.</p>
                             </div>
                             <Button 
-                                className="h-11 bg-slate-900 hover:bg-black uppercase text-[10px] font-bold tracking-widest gap-2 rounded-xl px-6"
-                                onClick={() => alert("Successfully fired mock webhook payload to target URL.")}
+                                className="h-11 bg-slate-900 hover:bg-black uppercase text-[10px] font-bold tracking-widest gap-2 rounded-xl px-6 min-w-[150px]"
+                                onClick={handleTestWebhook}
+                                disabled={runningWebhook}
                             >
-                                <Play className="w-3.5 h-3.5" />
+                                {runningWebhook ? <span className="animate-spin">⟳</span> : <Play className="w-3.5 h-3.5" />}
                                 Fire Webhook
                             </Button>
                         </div>

@@ -17,7 +17,8 @@ import {
     Clock,
     FileCode,
     ExternalLink,
-    AlertCircle
+    AlertCircle,
+    Target
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -60,9 +61,11 @@ export default function SettingsPage() {
         excludedKeywords: 'Test, Internal',
         defaultAgent: 'none',
         clickupWebhook: '',
+        clickupListId: '',
         clickupTemplate: `==📊 **New Audited Call** ==\n\n👤 **Rep:** {{rep}}\n👥 **Prospect:** {{title}}\n📅 **Date:** {{date}}\n🔗 **Link:** {{link}}\n⏱️ **Duration:** {{duration}} min\n\n<details>\n<summary>🔎 **Click to see full AI Review**</summary>\n\n{{analysis}}\n\n**Quick Stats:**\n- **Alignment:** {{alignment}}\n- **Score:** {{score}}/10\n- **Risk:** {{risk}}\n\n[Full Report]({{link}})\n[Recording]({{transcript}})\n</details>`,
         dailySyncTime: '02:00',
-        autoSyncEnabled: true
+        autoSyncEnabled: true,
+        aiModel: 'gemini-2.5-pro'
     });
     const [savingSettings, setSavingSettings] = useState(false);
 
@@ -102,8 +105,13 @@ export default function SettingsPage() {
             <Header
                 breadcrumbs={[{ label: 'System Settings' }]}
                 actions={
-                    <Button size="sm" className="h-9 gap-2 bg-indigo-600 hover:bg-indigo-700 text-xs font-bold uppercase tracking-wider">
-                        <Save className="w-3 h-3" />
+                    <Button 
+                        size="sm" 
+                        onClick={handleSavePipeline}
+                        disabled={savingSettings}
+                        className="h-9 gap-2 bg-indigo-600 hover:bg-indigo-700 text-xs font-bold uppercase tracking-wider"
+                    >
+                        {savingSettings ? <RefreshCcw className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />}
                         Save Changes
                     </Button>
                 }
@@ -211,7 +219,6 @@ export default function SettingsPage() {
 
                                         <div className="space-y-4">
                                             <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 pb-2">Destinations</h3>
-                                            {/* ClickUp Webhook */}
                                             <div className="space-y-3">
                                                 <div className="flex items-center gap-2">
                                                     <div className="p-1 rounded bg-slate-100"><ExternalLink className="w-3 h-3 text-slate-600" /></div>
@@ -223,6 +230,21 @@ export default function SettingsPage() {
                                                     value={pipelineSettings.clickupWebhook}
                                                     onChange={(e) => setPipelineSettings(prev => ({ ...prev, clickupWebhook: e.target.value }))}
                                                 />
+                                            </div>
+                                            
+                                            {/* ClickUp List ID for Native Tasks */}
+                                            <div className="space-y-3">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="p-1 rounded bg-slate-100"><Target className="w-3 h-3 text-slate-600" /></div>
+                                                    <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">ClickUp List ID (For Coaching Tasks)</Label>
+                                                </div>
+                                                <Input
+                                                    placeholder="e.g. 123456789"
+                                                    className="h-11 rounded-xl bg-slate-50 border-slate-200 text-sm shadow-sm focus-visible:ring-indigo-500"
+                                                    value={pipelineSettings.clickupListId || ''}
+                                                    onChange={(e) => setPipelineSettings(prev => ({ ...prev, clickupListId: e.target.value }))}
+                                                />
+                                                <p className="text-[9px] text-slate-400 font-medium">Used natively by the Phase 3 advanced workflow engine to push AI suggestions to reps.</p>
                                             </div>
 
                                             {/* ClickUp Template */}
@@ -356,26 +378,64 @@ export default function SettingsPage() {
                             </CardHeader>
                             <CardContent className="p-8 space-y-8">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                    <ModelSelector
-                                        label="Transcript Extraction"
-                                        description="Handles long-context needle-in-haystack extraction"
-                                        defaultModel="Gemini 1.5 Pro (Latest)"
-                                    />
-                                    <ModelSelector
-                                        label="Section Scoring"
-                                        description="Detailed reasoning and numeric evaluation"
-                                        defaultModel="GPT-4o (2024-05-13)"
-                                    />
-                                    <ModelSelector
-                                        label="Coaching Generation"
-                                        description="Creative and action-oriented feedback"
-                                        defaultModel="Claude 3.5 Sonnet"
-                                    />
-                                    <ModelSelector
-                                        label="RAG Document Embedding"
-                                        description="Vector search and document indexing"
-                                        defaultModel="text-embedding-3-small"
-                                    />
+                                    <div className="space-y-3">
+                                        <div className="space-y-1">
+                                            <Label className="text-sm font-bold text-slate-900">Primary AI Reasoning Model</Label>
+                                            <p className="text-[10px] text-slate-400 font-medium">Select the foundational model to perform all transcript analytics, scoring, and coaching extraction.</p>
+                                        </div>
+                                        <Select
+                                            value={pipelineSettings.aiModel}
+                                            onValueChange={(val) => setPipelineSettings({ ...pipelineSettings, aiModel: val })}
+                                        >
+                                            <SelectTrigger className="w-full bg-white border border-slate-200 rounded-xl px-4 py-6 text-sm font-semibold text-slate-700 hover:border-indigo-200 hover:bg-slate-50/50 transition-all cursor-pointer shadow-sm">
+                                                <SelectValue placeholder="Select Gemini Model" />
+                                            </SelectTrigger>
+                                            <SelectContent className="rounded-xl border-slate-200 shadow-xl overflow-hidden">
+                                                <div className="bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">Recommended (2026)</div>
+                                                <SelectItem value="gemini-3.0-pro" className="py-3 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">Gemini 3.0 Pro</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Absolute best reasoning & needle-in-haystack search</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="gemini-3.0-flash" className="py-3 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">Gemini 3.0 Flash</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Incredibly fast, minimal tokens cost</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <div className="bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-y border-slate-100">Legacy Models (Stable)</div>
+                                                <SelectItem value="gemini-2.5-pro" className="py-3 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">Gemini 2.5 Pro</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Reliable workhorse from late 2024/2025</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="gemini-2.5-flash" className="py-3 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">Gemini 2.5 Flash</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Efficient legacy speed</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="gemini-1.5-pro-latest" className="py-3 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">Gemini 1.5 Pro</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Classic 2024 model</span>
+                                                    </div>
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <div className="space-y-1">
+                                            <Label className="text-sm font-bold text-slate-900 flex items-center gap-2">Gemini File API (RAG Embedding) <Badge variant="secondary" className="text-[10px] bg-green-50 text-green-600 border-green-100 uppercase tracking-widest px-1.5 h-4">Native</Badge></Label>
+                                            <p className="text-[10px] text-slate-400 font-medium">Document embeddings and vector search are now handled natively inside the primary model context.</p>
+                                        </div>
+                                        <div className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-sm font-semibold text-slate-400 flex items-center justify-between cursor-not-allowed">
+                                            <span>Merged with Primary Model</span>
+                                            <Database className="w-4 h-4 text-slate-300" />
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div className="pt-8 border-t border-slate-100 flex items-center justify-between">

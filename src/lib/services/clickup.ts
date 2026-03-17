@@ -5,43 +5,9 @@ export interface ClickUpMessage {
     content?: string;
 }
 
-export async function sendClickUpNotification(message: string, overrideWebhookUrl?: string) {
-    const webhookUrl = overrideWebhookUrl || process.env.CLICKUP_WEBHOOK_URL;
-
-    // Fallback to Direct API if no Webhook provided
-    if (!webhookUrl) {
-        return await sendDirectClickUpMessage(message);
-    }
-
-    console.log(`[ClickUp] Sending notification to webhook: ${webhookUrl}`);
-
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-
-        const response = await fetch(webhookUrl, {
-            method: 'POST',
-            signal: controller.signal,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                text: message,
-                content: message // Support both naming conventions
-            })
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-            throw new Error(`Webhook failed with status: ${response.status}`);
-        }
-    } catch (error: any) {
-        if (error.name === 'AbortError') {
-            console.error("[ClickUp] Webhook timed out after 10s");
-        } else {
-            console.error("[ClickUp] Webhook error:", error.message);
-        }
-        throw error;
-    }
+export async function sendClickUpNotification(message: string, _ignoredWebhookUrl?: string) {
+    console.log(`[ClickUp] Sending notification directly via ClickUp API v3`);
+    return await sendDirectClickUpMessage(message);
 }
 
 async function sendDirectClickUpMessage(message: string) {
@@ -68,7 +34,10 @@ async function sendDirectClickUpMessage(message: string) {
                 'Authorization': apiKey,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ content: message })
+            body: JSON.stringify({ 
+                content: message,
+                content_format: 'text/md'
+            })
         });
 
         clearTimeout(timeoutId);
@@ -143,3 +112,5 @@ export function formatClickUpMessage(
 
     return message;
 }
+
+

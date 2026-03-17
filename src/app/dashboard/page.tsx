@@ -7,13 +7,27 @@ import {
     TrendingUp,
     AlertCircle,
     Filter,
-    RefreshCw
+    RefreshCw,
+    MoreHorizontal,
+    Edit2,
+    Trash2
 } from 'lucide-react';
 import { useReps } from '@/lib/hooks/useReps';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { doc, setDoc, deleteDoc, updateDoc, Timestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
@@ -42,6 +56,82 @@ const getAvatarColor = (name: string) => {
 
 export default function Dashboard() {
     const { reps, loading } = useReps();
+    const [isAddRepOpen, setIsAddRepOpen] = React.useState(false);
+    const [newRepEmail, setNewRepEmail] = React.useState('');
+    const [newRepName, setNewRepName] = React.useState('');
+    const [addingRep, setAddingRep] = React.useState(false);
+
+    // Edit Rep State
+    const [isEditRepOpen, setIsEditRepOpen] = React.useState(false);
+    const [editRepEmail, setEditRepEmail] = React.useState('');
+    const [editRepName, setEditRepName] = React.useState('');
+    const [edittingRep, setEdittingRep] = React.useState(false);
+
+    // Delete Rep State
+    const [isDeleteRepOpen, setIsDeleteRepOpen] = React.useState(false);
+    const [deleteRepEmail, setDeleteRepEmail] = React.useState('');
+    const [deletingRep, setDeletingRep] = React.useState(false);
+
+    const openEditRep = (rep: any) => {
+        setEditRepEmail(rep.email);
+        setEditRepName(rep.name);
+        setIsEditRepOpen(true);
+    };
+
+    const openDeleteRep = (email: string) => {
+        setDeleteRepEmail(email);
+        setIsDeleteRepOpen(true);
+    };
+
+    const handleEditRep = async () => {
+        if (!editRepName || !editRepEmail) return;
+        setEdittingRep(true);
+        try {
+            await updateDoc(doc(db, 'reps', editRepEmail), {
+                name: editRepName.trim(),
+            });
+            setIsEditRepOpen(false);
+        } catch (e) {
+            console.error("Failed to edit rep", e);
+        } finally {
+            setEdittingRep(false);
+        }
+    };
+
+    const handleDeleteRep = async () => {
+        if (!deleteRepEmail) return;
+        setDeletingRep(true);
+        try {
+            await deleteDoc(doc(db, 'reps', deleteRepEmail));
+            setIsDeleteRepOpen(false);
+        } catch (e) {
+            console.error("Failed to delete rep", e);
+        } finally {
+            setDeletingRep(false);
+        }
+    };
+
+    const handleAddRep = async () => {
+        if (!newRepEmail || !newRepName) return;
+        setAddingRep(true);
+        try {
+            await setDoc(doc(db, 'reps', newRepEmail.toLowerCase().trim()), {
+                name: newRepName.trim(),
+                email: newRepEmail.toLowerCase().trim(),
+                totalCalls: 0,
+                avgScore: 0,
+                isActive: true,
+                createdAt: Timestamp.now()
+            });
+            setIsAddRepOpen(false);
+            setNewRepEmail('');
+            setNewRepName('');
+        } catch (e) {
+            console.error("Failed to add rep", e);
+        } finally {
+            setAddingRep(false);
+        }
+    };
 
     const avgTeamScore = reps.length > 0
         ? reps.reduce((acc, r) => acc + r.avgScore, 0) / reps.length
@@ -90,13 +180,130 @@ export default function Dashboard() {
                             <Filter className="w-3 h-3" />
                             Filter
                         </Button>
-                        <Button size="sm" className="h-9 gap-2 bg-indigo-600 hover:bg-indigo-700 text-xs font-bold uppercase tracking-wider">
+                        <Button 
+                            size="sm" 
+                            className="h-9 gap-2 bg-indigo-600 hover:bg-indigo-700 text-xs font-bold uppercase tracking-wider"
+                            onClick={() => setIsAddRepOpen(true)}
+                        >
                             <Users className="w-3 h-3" />
                             Add Representative
                         </Button>
                     </div>
                 }
             />
+
+            <Dialog open={isAddRepOpen} onOpenChange={setIsAddRepOpen}>
+                <DialogContent className="sm:max-w-md rounded-2xl border-none shadow-xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-black uppercase tracking-tight">Add Representative</DialogTitle>
+                        <DialogDescription className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                            Calls from Fireflies matching this email will be automatically assigned.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Email Address</Label>
+                            <Input
+                                placeholder="rep@company.com"
+                                className="h-11 rounded-xl bg-slate-50 border-slate-100"
+                                value={newRepEmail}
+                                onChange={(e) => setNewRepEmail(e.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Full Name</Label>
+                            <Input
+                                placeholder="Jane Doe"
+                                className="h-11 rounded-xl bg-slate-50 border-slate-100"
+                                value={newRepName}
+                                onChange={(e) => setNewRepName(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button 
+                            variant="outline" 
+                            className="rounded-xl font-bold uppercase text-[10px] tracking-widest h-11"
+                            onClick={() => setIsAddRepOpen(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button 
+                            className="bg-indigo-600 hover:bg-indigo-700 rounded-xl font-bold uppercase text-[10px] tracking-widest h-11"
+                            onClick={handleAddRep}
+                            disabled={addingRep || !newRepEmail || !newRepName}
+                        >
+                            {addingRep ? 'Adding...' : 'Add Representative'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={isEditRepOpen} onOpenChange={setIsEditRepOpen}>
+                <DialogContent className="sm:max-w-md rounded-2xl border-none shadow-xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-black uppercase tracking-tight">Edit Representative</DialogTitle>
+                        <DialogDescription className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                            Update the name for {editRepEmail}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Full Name</Label>
+                            <Input
+                                placeholder="Jane Doe"
+                                className="h-11 rounded-xl bg-slate-50 border-slate-100"
+                                value={editRepName}
+                                onChange={(e) => setEditRepName(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button 
+                            variant="outline" 
+                            className="rounded-xl font-bold uppercase text-[10px] tracking-widest h-11"
+                            onClick={() => setIsEditRepOpen(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button 
+                            className="bg-indigo-600 hover:bg-indigo-700 rounded-xl font-bold uppercase text-[10px] tracking-widest h-11"
+                            onClick={handleEditRep}
+                            disabled={edittingRep || !editRepName}
+                        >
+                            {edittingRep ? 'Saving...' : 'Save Changes'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={isDeleteRepOpen} onOpenChange={setIsDeleteRepOpen}>
+                <DialogContent className="sm:max-w-md rounded-2xl border-none shadow-xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-black uppercase tracking-tight">Delete Representative</DialogTitle>
+                        <DialogDescription className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                            Are you sure you want to completely remove <strong>{deleteRepEmail}</strong>? This action cannot be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="mt-4">
+                        <Button 
+                            variant="outline" 
+                            className="rounded-xl font-bold uppercase text-[10px] tracking-widest h-11"
+                            onClick={() => setIsDeleteRepOpen(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button 
+                            variant="destructive"
+                            className="rounded-xl font-bold uppercase text-[10px] tracking-widest h-11 bg-red-600 hover:bg-red-700"
+                            onClick={handleDeleteRep}
+                            disabled={deletingRep}
+                        >
+                            {deletingRep ? 'Deleting...' : 'Delete Rep'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <div className="flex-1 overflow-y-auto px-8 py-8 pb-20">
                 <div className="mb-8 text-center md:text-left">
@@ -153,7 +360,8 @@ export default function Dashboard() {
                                     <TableHead className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Representative</TableHead>
                                     <TableHead className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Calls</TableHead>
                                     <TableHead className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Avg Score</TableHead>
-                                    <TableHead className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right pr-8">Status</TableHead>
+                                    <TableHead className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Status</TableHead>
+                                    <TableHead className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right pr-6 w-16"></TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -196,7 +404,7 @@ export default function Dashboard() {
                                                 />
                                             </div>
                                         </TableCell>
-                                        <TableCell className="text-right pr-8">
+                                        <TableCell className="text-right">
                                             <Badge variant="outline" className={cn(
                                                 "text-[10px] font-bold uppercase tracking-tight gap-1.5 py-1 px-3 border-none",
                                                 rep.avgScore >= 6 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
@@ -207,6 +415,31 @@ export default function Dashboard() {
                                                     <><AlertCircle className="w-3 h-3" /> Needs Coaching</>
                                                 )}
                                             </Badge>
+                                        </TableCell>
+                                        <TableCell className="pr-6 text-right" onClick={(e) => e.stopPropagation()}>
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button variant="ghost" className="h-8 w-8 p-0 hover:bg-slate-100 rounded-lg">
+                                                        <MoreHorizontal className="h-4 w-4 text-slate-500" />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-40 rounded-xl border-slate-100 shadow-xl">
+                                                    <DropdownMenuItem 
+                                                        className="gap-2 text-xs font-bold cursor-pointer text-slate-700 focus:bg-slate-50"
+                                                        onClick={() => openEditRep(rep)}
+                                                    >
+                                                        <Edit2 className="w-3.5 h-3.5" />
+                                                        Edit name
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem 
+                                                        className="gap-2 text-xs font-bold cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700"
+                                                        onClick={() => openDeleteRep(rep.email)}
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                        Delete
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
                                         </TableCell>
                                     </TableRow>
                                 ))}

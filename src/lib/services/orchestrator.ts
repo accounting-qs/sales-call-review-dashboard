@@ -70,6 +70,11 @@ export async function processLatestCalls() {
             console.log(`[Orchestrator] Auto-Processing ${callType.toUpperCase()}: "${t.title}"`);
             await processSingleCall(t, callType);
         }
+
+        // Save last synced timestamp
+        const now = new Date().toISOString();
+        await setDoc(settingsRef, { lastSyncedAt: now }, { merge: true });
+        console.log(`[Orchestrator] Finished polling. Last synced updated to ${now}`);
     } catch (error) {
         console.error("[Orchestrator] Fatal error in pipeline:", error);
     }
@@ -79,6 +84,11 @@ export async function processLatestCalls() {
  * Manually trigger analysis for a specific Fireflies transcript
  */
 export async function processSingleCallById(firefliesId: string, forcedCallType: 'evaluation' | 'followup') {
+    const alreadyProcessed = await checkIfExists(firefliesId);
+    if (alreadyProcessed) {
+        throw new Error("Call already analyzed and synced in database");
+    }
+
     const fullTranscript = await getTranscriptDetails(firefliesId);
     if (!fullTranscript) throw new Error("Transcript not found in Fireflies");
 
@@ -100,6 +110,9 @@ export async function processSingleCall(t: any, callType: 'evaluation' | 'follow
     // 3. Get Full Content
     const fullTranscript = await getTranscriptDetails(t.id);
     const formattedText = formatTranscript(fullTranscript);
+
+    // Ensure rep exists dynamically
+    await ensureRepExists(t.host_email, t.title);
 
     // 4. Gemini Analysis
     const callMetadata: Partial<Call> = {
@@ -151,9 +164,29 @@ export async function processSingleCall(t: any, callType: 'evaluation' | 'follow
 }
 
 async function checkIfExists(firefliesId: string): Promise<boolean> {
-    const q = query(collection(db, "calls"), where("firefliesId", "==", firefliesId));
-    const snapshot = await getDocs(q);
-    return !snapshot.empty;
+    const docRef = doc(db, "calls", firefliesId);
+    const snapshot = await getDoc(docRef);
+    return snapshot.exists();
+}
+
+async function ensureRepExists(email: string, title?: string) {
+    if (!email) return;
+    
+    // In case there is no name mapping available, use the email prefix
+    const rawName = email.split('@')[0];
+    const name = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+
+    const repRef = doc(db, "reps", email);
+    const repSnap = await getDoc(repRef);
+    if (!repSnap.exists()) {
+        await setDoc(repRef, {
+            email,
+            name: name,
+            createdAt: Timestamp.now(),
+            isActive: true
+        });
+        console.log(`[Orchestrator] Auto-created new rep profile for ${email}`);
+    }
 }
 
 async function saveAnalysisToFirestore(t: any, metadata: any, analysis: Analysis) {

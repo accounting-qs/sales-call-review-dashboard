@@ -12,11 +12,20 @@ import {
     RefreshCcw,
     Plus,
     Info,
-    Database
+    Database,
+    Activity,
+    Clock,
+    FileCode,
+    ExternalLink,
+    AlertCircle
 } from 'lucide-react';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Header } from '@/components/layout/Header';
 import { seedData } from '@/lib/seed';
 import { cn } from '@/lib/utils';
+import { RAGDocsSection } from '@/components/settings/RAGDocsSection';
+import { QASection } from '@/components/settings/QASection';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,9 +46,56 @@ import {
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function SettingsPage() {
-    const [activeTab, setActiveTab] = useState('docs');
+    const [activeTab, setActiveTab] = useState('pipeline');
+    
+    // Pipeline Settings State
+    const [pipelineSettings, setPipelineSettings] = useState({
+        autoAnalysis: false,
+        evaluationKeywords: 'Evaluation Call, Business Evaluation',
+        followupKeywords: 'Follow-up',
+        excludedKeywords: 'Test, Internal',
+        defaultAgent: 'none',
+        clickupWebhook: '',
+        clickupTemplate: `==📊 **New Audited Call** ==\n\n👤 **Rep:** {{rep}}\n👥 **Prospect:** {{title}}\n📅 **Date:** {{date}}\n🔗 **Link:** {{link}}\n⏱️ **Duration:** {{duration}} min\n\n<details>\n<summary>🔎 **Click to see full AI Review**</summary>\n\n{{analysis}}\n\n**Quick Stats:**\n- **Alignment:** {{alignment}}\n- **Score:** {{score}}/10\n- **Risk:** {{risk}}\n\n[Full Report]({{link}})\n[Recording]({{transcript}})\n</details>`,
+        dailySyncTime: '02:00',
+        autoSyncEnabled: true
+    });
+    const [savingSettings, setSavingSettings] = useState(false);
+
+    React.useEffect(() => {
+        const loadSettings = async () => {
+            try {
+                const docRef = doc(db, 'settings', 'fireflies_pipeline');
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    setPipelineSettings(prev => ({ ...prev, ...docSnap.data() }));
+                }
+            } catch (error) {
+                console.error("Error loading settings:", error);
+            }
+        };
+        loadSettings();
+    }, []);
+
+    const handleSavePipeline = async () => {
+        setSavingSettings(true);
+        try {
+            await setDoc(doc(db, 'settings', 'fireflies_pipeline'), {
+                ...pipelineSettings,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+            alert("Pipeline settings saved successfully!");
+        } catch (error) {
+            console.error("Error saving settings:", error);
+            alert("Failed to save settings");
+        } finally {
+            setSavingSettings(false);
+        }
+    };
 
     return (
         <div className="flex-1 flex flex-col min-h-0 bg-slate-50/50">
@@ -61,6 +117,10 @@ export default function SettingsPage() {
 
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
                     <TabsList className="bg-slate-100 p-1 rounded-lg">
+                        <TabsTrigger value="pipeline" className="text-xs font-bold uppercase tracking-wider gap-2 h-8 px-4 data-[state=active]:bg-white data-[state=active]:text-indigo-600">
+                            <Activity className="w-3.5 h-3.5" />
+                            Data Pipeline
+                        </TabsTrigger>
                         <TabsTrigger value="docs" className="text-xs font-bold uppercase tracking-wider gap-2 h-8 px-4 data-[state=active]:bg-white data-[state=active]:text-indigo-600">
                             <FileText className="w-3.5 h-3.5" />
                             RAG Documents
@@ -73,72 +133,195 @@ export default function SettingsPage() {
                             <Cpu className="w-3.5 h-3.5" />
                             Model Configuration
                         </TabsTrigger>
+                        <TabsTrigger value="qa" className="text-xs font-bold uppercase tracking-wider gap-2 h-8 px-4 data-[state=active]:bg-white data-[state=active]:text-rose-600">
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            QA Debugger
+                        </TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="docs" className="space-y-6">
-                        <Card className="border-none shadow-sm bg-white overflow-hidden">
-                            <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 px-6 py-6">
+                    <TabsContent value="pipeline" className="space-y-6">
+                        <Card className="border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)] bg-white overflow-hidden rounded-2xl">
+                            <CardHeader className="flex flex-row items-center justify-between border-b border-indigo-50/50 bg-indigo-50/30 px-8 py-6">
                                 <div>
-                                    <CardTitle className="text-base font-bold text-slate-900">Reference Documents</CardTitle>
-                                    <CardDescription className="text-xs">Upload PDFs for AI to use as context via RAG</CardDescription>
+                                    <CardTitle className="text-xl font-black uppercase tracking-tight text-slate-900">Pipeline Config</CardTitle>
+                                    <CardDescription className="text-[11px] font-bold uppercase tracking-widest mt-1 text-slate-500">Configure automated synchronization and AI analysis rules</CardDescription>
                                 </div>
-                                <Button variant="outline" className="h-9 gap-2 text-xs font-bold border-slate-200">
-                                    <Upload className="w-3.5 h-3.5" />
-                                    Upload Document
+                                <Button 
+                                    className="bg-indigo-600 hover:bg-indigo-700 h-10 px-6 font-black uppercase tracking-widest text-[10px] rounded-xl shadow-lg shadow-indigo-100 gap-2"
+                                    onClick={handleSavePipeline}
+                                    disabled={savingSettings}
+                                >
+                                    {savingSettings ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                    Save Rules
                                 </Button>
                             </CardHeader>
-                            <CardContent className="p-0">
-                                <Table>
-                                    <TableHeader className="bg-slate-50">
-                                        <TableRow className="border-slate-100">
-                                            <TableHead className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-6 py-3">Document Name</TableHead>
-                                            <TableHead className="text-[10px] font-bold text-slate-400 uppercase tracking-widest py-3">Size / Chunks</TableHead>
-                                            <TableHead className="text-[10px] font-bold text-slate-400 uppercase tracking-widest py-3">Status</TableHead>
-                                            <TableHead className="text-[10px] font-bold text-slate-400 uppercase tracking-widest py-3">Date Uploaded</TableHead>
-                                            <TableHead className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right pr-6 py-3">Actions</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        <TableRow className="border-slate-100 hover:bg-slate-50/50">
-                                            <TableCell className="pl-6 font-bold py-4">Sales_Closing_Framework_v2.pdf</TableCell>
-                                            <TableCell>
-                                                <div className="flex flex-col">
-                                                    <span className="text-xs font-medium text-slate-600">2.4 MB</span>
-                                                    <span className="text-[10px] text-slate-400">124 chunks</span>
+                            <CardContent className="p-8">
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                                    {/* Column 1 */}
+                                    <div className="space-y-8">
+                                        <div className="space-y-4">
+                                            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 pb-2">Automation Rules</h3>
+                                            
+                                            {/* Auto Analysis Toggle */}
+                                            <div className="flex items-center justify-between p-5 rounded-2xl bg-indigo-50/50 border border-indigo-100/50 hover:border-indigo-200 transition-colors">
+                                                <div className="space-y-0.5">
+                                                    <Label className="text-sm font-black text-indigo-900">Auto-Analyze Transcripts</Label>
+                                                    <p className="text-[10px] text-indigo-600/70 font-bold uppercase tracking-widest">Trigger AI heavily immediately after sync</p>
                                                 </div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge className="bg-green-50 text-green-600 border-green-100 text-[10px] px-2 py-0.5 font-bold">Indexed</Badge>
-                                            </TableCell>
-                                            <TableCell className="text-xs font-medium text-slate-600">May 12, 2024</TableCell>
-                                            <TableCell className="text-right pr-6">
-                                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50">
-                                                    <Trash2 className="w-4 h-4" />
-                                                </Button>
-                                            </TableCell>
-                                        </TableRow>
-                                        <TableRow className="border-slate-100 hover:bg-slate-50/50">
-                                            <TableCell className="pl-6 font-bold py-4">Objection_Handling_Guide.pdf</TableCell>
-                                            <TableCell>
-                                                <div className="flex flex-col">
-                                                    <span className="text-xs font-medium text-slate-600">1.8 MB</span>
-                                                    <span className="text-[10px] text-slate-400">68 chunks</span>
+                                                <Switch
+                                                    checked={pipelineSettings.autoAnalysis}
+                                                    onCheckedChange={(val) => setPipelineSettings(prev => ({ ...prev, autoAnalysis: val }))}
+                                                />
+                                            </div>
+
+                                            {/* Automated Daily Sync Settings */}
+                                            <div className="space-y-4 p-5 rounded-2xl bg-slate-50 border border-slate-200 hover:border-slate-300 transition-colors">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="space-y-0.5">
+                                                        <Label className="text-sm font-black text-slate-900">Automated Daily Sync</Label>
+                                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Enable background automated pulls</p>
+                                                    </div>
+                                                    <Switch
+                                                        checked={pipelineSettings.autoSyncEnabled}
+                                                        onCheckedChange={(val) => setPipelineSettings(prev => ({ ...prev, autoSyncEnabled: val }))}
+                                                    />
                                                 </div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge className="bg-green-50 text-green-600 border-green-100 text-[10px] px-2 py-0.5 font-bold">Indexed</Badge>
-                                            </TableCell>
-                                            <TableCell className="text-xs font-medium text-slate-600">May 10, 2024</TableCell>
-                                            <TableCell className="text-right pr-6">
-                                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50">
-                                                    <Trash2 className="w-4 h-4" />
-                                                </Button>
-                                            </TableCell>
-                                        </TableRow>
-                                    </TableBody>
-                                </Table>
+                                                
+                                                {pipelineSettings.autoSyncEnabled && (
+                                                    <div className="pt-4 border-t border-slate-200">
+                                                        <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900 mb-2 block">CRON Execution Time (24H Format)</Label>
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="p-2.5 bg-white rounded-lg border border-slate-200 shadow-sm">
+                                                                <Clock className="w-4 h-4 text-indigo-600" />
+                                                            </div>
+                                                            <Input
+                                                                type="time"
+                                                                className="h-11 rounded-xl shadow-sm bg-white border-slate-200 text-sm font-bold w-32 focus-visible:ring-indigo-500"
+                                                                value={pipelineSettings.dailySyncTime}
+                                                                onChange={(e) => setPipelineSettings(prev => ({ ...prev, dailySyncTime: e.target.value }))}
+                                                            />
+                                                            <p className="text-[9px] text-slate-400 font-bold uppercase italic mt-1 leading-tight flex-1">
+                                                                The external CRON job checks the `/api/cron/sync` endpoint. It only executes if the current hour matches this time.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 pb-2">Destinations</h3>
+                                            {/* ClickUp Webhook */}
+                                            <div className="space-y-3">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="p-1 rounded bg-slate-100"><ExternalLink className="w-3 h-3 text-slate-600" /></div>
+                                                    <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Webhook URL (ClickUp / Zapier)</Label>
+                                                </div>
+                                                <Input
+                                                    placeholder="https://api.clickup.com/..."
+                                                    className="h-11 rounded-xl bg-slate-50 border-slate-200 text-[11px] font-mono shadow-sm focus-visible:ring-indigo-500"
+                                                    value={pipelineSettings.clickupWebhook}
+                                                    onChange={(e) => setPipelineSettings(prev => ({ ...prev, clickupWebhook: e.target.value }))}
+                                                />
+                                            </div>
+
+                                            {/* ClickUp Template */}
+                                            <div className="space-y-3">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="p-1 rounded bg-slate-100"><FileCode className="w-3 h-3 text-slate-600" /></div>
+                                                    <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Message Body (Markdown)</Label>
+                                                </div>
+                                                <Textarea
+                                                    className="min-h-[220px] rounded-xl bg-slate-50 border-slate-200 text-[11px] font-mono leading-relaxed shadow-sm focus-visible:ring-indigo-500"
+                                                    value={pipelineSettings.clickupTemplate}
+                                                    onChange={(e) => setPipelineSettings(prev => ({ ...prev, clickupTemplate: e.target.value }))}
+                                                />
+                                                <div className="flex flex-wrap gap-2 mt-2">
+                                                    {['{{rep}}', '{{title}}', '{{date}}', '{{link}}', '{{duration}}', '{{analysis}}', '{{score}}', '{{risk}}'].map(p => (
+                                                        <code key={p} className="text-[9px] font-bold bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 text-indigo-700">{p}</code>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Column 2 */}
+                                    <div className="space-y-8">
+                                        <div className="space-y-4">
+                                            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 pb-2">Routing Rules</h3>
+                                        
+                                            {/* Evaluation Keywords */}
+                                            <div className="space-y-3 p-4 rounded-xl bg-slate-50 border border-slate-100">
+                                                <div className="flex items-center gap-2">
+                                                    <Badge className="bg-indigo-600 text-white border-none font-black text-[9px] px-2 py-0.5 uppercase tracking-widest shadow-sm shadow-indigo-100">Call 1</Badge>
+                                                    <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Evaluation Keywords</Label>
+                                                </div>
+                                                <Input
+                                                    className="h-11 rounded-xl bg-white border-slate-200 text-sm shadow-sm"
+                                                    value={pipelineSettings.evaluationKeywords}
+                                                    onChange={(e) => setPipelineSettings(prev => ({ ...prev, evaluationKeywords: e.target.value }))}
+                                                />
+                                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Keywords to route to Evaluation Agent</p>
+                                            </div>
+
+                                            {/* Follow-up Keywords */}
+                                            <div className="space-y-3 p-4 rounded-xl bg-slate-50 border border-slate-100">
+                                                <div className="flex items-center gap-2">
+                                                    <Badge className="bg-purple-600 text-white border-none font-black text-[9px] px-2 py-0.5 uppercase tracking-widest shadow-sm shadow-purple-100">Call 2</Badge>
+                                                    <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Follow-up Keywords</Label>
+                                                </div>
+                                                <Input
+                                                    className="h-11 rounded-xl bg-white border-slate-200 text-sm shadow-sm"
+                                                    value={pipelineSettings.followupKeywords}
+                                                    onChange={(e) => setPipelineSettings(prev => ({ ...prev, followupKeywords: e.target.value }))}
+                                                />
+                                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Keywords to route to Follow-up Agent</p>
+                                            </div>
+
+                                            {/* Excluded Keywords */}
+                                            <div className="space-y-3 p-4 rounded-xl bg-slate-50 border border-slate-100">
+                                                <div className="flex items-center gap-2">
+                                                    <Badge variant="outline" className="text-slate-500 border-slate-300 font-black text-[9px] px-2 py-0.5 uppercase tracking-widest">Ignore</Badge>
+                                                    <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Excluded Title Keywords</Label>
+                                                </div>
+                                                <Input
+                                                    className="h-11 rounded-xl bg-white border-slate-200 text-sm shadow-sm"
+                                                    value={pipelineSettings.excludedKeywords}
+                                                    onChange={(e) => setPipelineSettings(prev => ({ ...prev, excludedKeywords: e.target.value }))}
+                                                />
+                                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Calls containing these words are never auto-analyzed</p>
+                                            </div>
+
+                                            {/* Default Agent */}
+                                            <div className="space-y-3 p-4 rounded-xl bg-slate-50 border border-slate-100">
+                                                <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Fallback Agent</Label>
+                                                <Select
+                                                    value={pipelineSettings.defaultAgent}
+                                                    onValueChange={(val) => setPipelineSettings(prev => ({ ...prev, defaultAgent: val }))}
+                                                >
+                                                    <SelectTrigger className="h-11 rounded-xl bg-white border-slate-200 text-sm shadow-sm">
+                                                        <SelectValue placeholder="Select defaults" />
+                                                    </SelectTrigger>
+                                                    <SelectContent className="rounded-xl border-slate-100 shadow-xl">
+                                                        <SelectItem value="none" className="font-bold cursor-pointer">None (Manual only)</SelectItem>
+                                                        <SelectItem value="evaluation" className="font-bold cursor-pointer"><span className="text-indigo-600 mr-2">•</span>Call 1 (Evaluation)</SelectItem>
+                                                        <SelectItem value="followup" className="font-bold cursor-pointer"><span className="text-purple-600 mr-2">•</span>Call 2 (Follow-up)</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </CardContent>
                         </Card>
+                    </TabsContent>
+
+                    <TabsContent value="docs" className="space-y-6">
+                        <RAGDocsSection />
+                    </TabsContent>
+
+                    <TabsContent value="qa" className="space-y-6">
+                        <QASection />
                     </TabsContent>
 
                     <TabsContent value="prompts" className="space-y-6">

@@ -34,14 +34,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import {
-    Sheet,
-    SheetContent,
-    SheetDescription,
-    SheetHeader,
-    SheetTitle,
-    SheetTrigger,
-} from '@/components/ui/sheet';
+
 import {
     Table,
     TableBody,
@@ -121,19 +114,7 @@ export default function SyncPage() {
     const [loadingDetails, setLoadingDetails] = useState(false);
     const [isFullScreen, setIsFullScreen] = useState(false);
     const [transcriptSearch, setTranscriptSearch] = useState('');
-
-    // Settings state
-    const [pipelineSettings, setPipelineSettings] = useState({
-        autoAnalysis: false,
-        evaluationKeywords: 'Evaluation Call, Business Evaluation',
-        followupKeywords: 'Follow-up',
-        excludedKeywords: 'Test, Internal',
-        defaultAgent: 'none',
-        clickupWebhook: '',
-        clickupTemplate: DEFAULT_TEMPLATE
-    });
-    const [savingSettings, setSavingSettings] = useState(false);
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [lastSyncedAt, setLastSyncedAt] = useState<string>('');
 
     const fetchFireflies = async () => {
         setSyncing(true);
@@ -152,6 +133,11 @@ export default function SyncPage() {
                     const ids = new Set(snapshot.docs.map(doc => doc.data().firefliesId));
                     setProcessedIds(ids);
                 }
+
+                // Update settings with the current timestamp
+                const now = new Date().toISOString();
+                setLastSyncedAt(now);
+                await setDoc(doc(db, 'settings', 'fireflies_pipeline'), { lastSyncedAt: now }, { merge: true });
             }
         } catch (error) {
             console.error("Sync error:", error);
@@ -170,31 +156,11 @@ export default function SyncPage() {
         try {
             const docRef = doc(db, 'settings', 'fireflies_pipeline');
             const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                setPipelineSettings(prev => ({
-                    ...prev,
-                    ...docSnap.data()
-                }));
+            if (docSnap.exists() && docSnap.data().lastSyncedAt) {
+                setLastSyncedAt(docSnap.data().lastSyncedAt);
             }
         } catch (error) {
             console.error("Error loading settings:", error);
-        }
-    };
-
-    const saveSettings = async () => {
-        setSavingSettings(true);
-        try {
-            await setDoc(doc(db, 'settings', 'fireflies_pipeline'), {
-                ...pipelineSettings,
-                updatedAt: new Date().toISOString()
-            });
-            setIsSettingsOpen(false);
-            alert("Pipeline settings saved successfully!");
-        } catch (error) {
-            console.error("Error saving settings:", error);
-            alert("Failed to save settings");
-        } finally {
-            setSavingSettings(false);
         }
     };
 
@@ -294,149 +260,28 @@ export default function SyncPage() {
             <Header
                 breadcrumbs={[{ label: 'Manager Dashboard' }, { label: 'Sync Fireflies' }]}
                 actions={
-                    <div className="flex items-center gap-3">
-                        <Sheet open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-                            <SheetTrigger asChild>
-                                <Button variant="outline" className="h-10 w-10 p-0 rounded-xl border-slate-200">
-                                    <SettingsIcon className="w-4 h-4 text-slate-500" />
-                                </Button>
-                            </SheetTrigger>
-                            <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
-                                <SheetHeader>
-                                    <SheetTitle className="text-xl font-black uppercase tracking-tight">Pipeline Settings</SheetTitle>
-                                    <SheetDescription className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                                        Configure automated synchronization and AI analysis rules
-                                    </SheetDescription>
-                                </SheetHeader>
-
-                                <div className="mt-8 space-y-8 pb-10">
-                                    {/* Auto Analysis Toggle */}
-                                    <div className="flex items-center justify-between p-4 rounded-2xl bg-indigo-50 border border-indigo-100">
-                                        <div className="space-y-0.5">
-                                            <Label className="text-sm font-black text-indigo-900">Auto-Analyze Transcripts</Label>
-                                            <p className="text-[10px] text-indigo-600/70 font-bold uppercase">Trigger analysis immediately after sync</p>
-                                        </div>
-                                        <Switch
-                                            checked={pipelineSettings.autoAnalysis}
-                                            onCheckedChange={(val) => setPipelineSettings(prev => ({ ...prev, autoAnalysis: val }))}
-                                        />
-                                    </div>
-
-                                    {/* Evaluation Keywords */}
-                                    <div className="space-y-3">
-                                        <div className="flex items-center gap-2">
-                                            <Badge className="bg-indigo-600 text-white border-none font-black text-[9px] px-2 py-0.5 uppercase">Call 1</Badge>
-                                            <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Evaluation Keywords</Label>
-                                        </div>
-                                        <Input
-                                            placeholder="Evaluation Call, Business Evaluation..."
-                                            className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm"
-                                            value={pipelineSettings.evaluationKeywords}
-                                            onChange={(e) => setPipelineSettings(prev => ({ ...prev, evaluationKeywords: e.target.value }))}
-                                        />
-                                        <p className="text-[9px] text-slate-400 font-bold uppercase italic">Comma separated keywords to route to Call 1 agent</p>
-                                    </div>
-
-                                    {/* Follow-up Keywords */}
-                                    <div className="space-y-3">
-                                        <div className="flex items-center gap-2">
-                                            <Badge className="bg-purple-600 text-white border-none font-black text-[9px] px-2 py-0.5 uppercase">Call 2</Badge>
-                                            <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Follow-up Keywords</Label>
-                                        </div>
-                                        <Input
-                                            placeholder="Follow-up, Check-in..."
-                                            className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm"
-                                            value={pipelineSettings.followupKeywords}
-                                            onChange={(e) => setPipelineSettings(prev => ({ ...prev, followupKeywords: e.target.value }))}
-                                        />
-                                        <p className="text-[9px] text-slate-400 font-bold uppercase italic">Keywords to route to Call 2 agent</p>
-                                    </div>
-
-                                    {/* Excluded Keywords */}
-                                    <div className="space-y-3">
-                                        <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Excluded Title Keywords</Label>
-                                        <Input
-                                            placeholder="Test, Internal, Mock..."
-                                            className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm"
-                                            value={pipelineSettings.excludedKeywords}
-                                            onChange={(e) => setPipelineSettings(prev => ({ ...prev, excludedKeywords: e.target.value }))}
-                                        />
-                                        <p className="text-[9px] text-slate-400 font-bold uppercase italic">Calls containing these words will never be auto-analyzed</p>
-                                    </div>
-
-                                    {/* Default Agent */}
-                                    <div className="space-y-3">
-                                        <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Default Unmatched Agent</Label>
-                                        <Select
-                                            value={pipelineSettings.defaultAgent}
-                                            onValueChange={(val) => setPipelineSettings(prev => ({ ...prev, defaultAgent: val }))}
-                                        >
-                                            <SelectTrigger className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm">
-                                                <SelectValue placeholder="Select default agent" />
-                                            </SelectTrigger>
-                                            <SelectContent className="rounded-xl border-slate-100">
-                                                <SelectItem value="none">None (Manual only)</SelectItem>
-                                                <SelectItem value="evaluation">Call 1 (Evaluation)</SelectItem>
-                                                <SelectItem value="followup">Call 2 (Follow-up)</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                        <p className="text-[9px] text-slate-400 font-bold uppercase italic">Agent to use if title matches no keywords</p>
-                                    </div>
-
-                                    {/* ClickUp Webhook */}
-                                    <div className="space-y-3">
-                                        <div className="flex items-center gap-2">
-                                            <div className="p-1 rounded bg-slate-100">
-                                                <ExternalLink className="w-3 h-3 text-slate-600" />
-                                            </div>
-                                            <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">ClickUp / n8n Webhook URL</Label>
-                                        </div>
-                                        <Input
-                                            placeholder="https://api.clickup.com/... or n8n webhook url"
-                                            className="h-11 rounded-xl bg-slate-50 border-slate-100 text-[11px] font-mono"
-                                            value={pipelineSettings.clickupWebhook}
-                                            onChange={(e) => setPipelineSettings(prev => ({ ...prev, clickupWebhook: e.target.value }))}
-                                        />
-                                        <p className="text-[9px] text-slate-400 font-bold uppercase italic">Replaces Direct API calls if provided</p>
-                                    </div>
-
-                                    {/* ClickUp Template */}
-                                    <div className="space-y-3 pb-4">
-                                        <div className="flex items-center gap-2">
-                                            <div className="p-1 rounded bg-slate-100">
-                                                <FileCode className="w-3 h-3 text-slate-600" />
-                                            </div>
-                                            <Label className="text-[11px] font-black uppercase tracking-widest text-slate-900">Message Template (Markdown)</Label>
-                                        </div>
-                                        <Textarea
-                                            placeholder="Enter message template..."
-                                            className="min-h-[200px] rounded-xl bg-slate-50 border-slate-100 text-[11px] font-mono leading-relaxed"
-                                            value={pipelineSettings.clickupTemplate}
-                                            onChange={(e) => setPipelineSettings(prev => ({ ...prev, clickupTemplate: e.target.value }))}
-                                        />
-                                        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
-                                            <p className="text-[9px] text-slate-400 font-bold uppercase mb-2">Available Placeholders:</p>
-                                            <div className="flex flex-wrap gap-2">
-                                                {['{{rep}}', '{{title}}', '{{date}}', '{{link}}', '{{duration}}', '{{analysis}}', '{{score}}', '{{risk}}', '{{alignment}}', '{{transcript}}'].map(p => (
-                                                    <code key={p} className="text-[9px] bg-white px-1.5 py-0.5 rounded border border-slate-100 text-indigo-600">{p}</code>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="pt-6">
-                                        <Button
-                                            className="w-full bg-slate-900 hover:bg-black h-12 rounded-xl font-black uppercase text-xs tracking-[0.2em] gap-2 shadow-xl shadow-slate-200"
-                                            onClick={saveSettings}
-                                            disabled={savingSettings}
-                                        >
-                                            {savingSettings ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                            Save Pipeline Config
-                                        </Button>
-                                    </div>
-                                </div>
-                            </SheetContent>
-                        </Sheet>
+                    <div className="flex items-center gap-4">
+                        {lastSyncedAt ? (
+                            <div className="flex flex-col items-end hidden sm:flex">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.15em]">Last Synced</span>
+                                <span className="text-[11px] font-bold text-slate-700 tabular-nums">
+                                    {new Date(lastSyncedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                                </span>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-end hidden sm:flex">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.15em]">Last Synced</span>
+                                <span className="text-[11px] font-bold text-slate-400 italic">Never</span>
+                            </div>
+                        )}
+                        <Button 
+                            variant="outline" 
+                            className="h-10 w-10 p-0 rounded-xl border-slate-200"
+                            onClick={() => window.location.href = '/settings'}
+                            title="Open Pipeline Settings"
+                        >
+                            <SettingsIcon className="w-4 h-4 text-slate-500" />
+                        </Button>
 
                         <Button
                             onClick={fetchFireflies}

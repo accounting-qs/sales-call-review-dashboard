@@ -48,7 +48,7 @@ const getScoreColor = (score: number) => {
 };
 
 const getAvatarColor = (name: string) => {
-    const char = name.charAt(0).toUpperCase();
+    const char = (name || '?').charAt(0).toUpperCase();
     if (['J', 'A', 'S', 'O', 'N'].includes(char)) return 'bg-indigo-600';
     if (['M', 'E', 'L', 'I'].includes(char)) return 'bg-purple-600';
     return 'bg-slate-400';
@@ -134,26 +134,14 @@ export default function Dashboard() {
     };
 
     const avgTeamScore = reps.length > 0
-        ? reps.reduce((acc, r) => acc + r.avgScore, 0) / reps.length
+        ? reps.reduce((acc, r) => acc + (r.avgScore || 0), 0) / reps.length
         : 0;
 
     const totalCalls = reps.reduce((acc, r) => acc + r.totalCalls, 0);
-    const topPerformer = reps.length > 0 ? [...reps].sort((a, b) => b.avgScore - a.avgScore)[0] : null;
+    const topPerformer = reps.length > 0 ? [...reps].sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0))[0] : null;
 
-    // Derived metric data for team overview bar chart
-    const proficiencyData = [
-        { name: 'Intro', score: 7.2 },
-        { name: 'Biz Analysis', score: 7.8 },
-        { name: 'Challenges', score: 6.9 },
-        { name: 'Goals', score: 6.8 },
-        { name: 'Transition', score: 7.5 },
-        { name: 'Funnel Flow', score: 6.2 },
-        { name: 'Timeline', score: 6.5 },
-        { name: 'ROI Calc', score: 6.7 },
-        { name: 'TC / PD', score: 3.5 },
-        { name: 'Objections', score: 5.1 },
-        { name: 'Next Steps', score: 4.8 },
-    ];
+    // Clear Demo Data: Replaced hardcoded array with empty array for now.
+    const proficiencyData: any[] = [];
 
     if (loading) return (
         <div className="flex-1 flex items-center justify-center">
@@ -331,12 +319,12 @@ export default function Dashboard() {
                     />
                     <KPICard
                         title="Top Performer"
-                        value={topPerformer ? topPerformer.name.toLowerCase().replace(/\s+/g, '') : 'N/A'}
-                        subtext={topPerformer ? `${topPerformer.avgScore.toFixed(1)} AVG SCORE` : ''}
+                        value={topPerformer ? (topPerformer.name || 'Unknown').toLowerCase().replace(/\s+/g, '') : 'N/A'}
+                        subtext={topPerformer ? `${(topPerformer.avgScore || 0).toFixed(1)} AVG SCORE` : ''}
                         icon={
                             <Avatar className="h-5 w-5">
-                                <AvatarFallback className={cn("text-white text-[10px] font-bold", topPerformer ? getAvatarColor(topPerformer.name) : 'bg-slate-200')}>
-                                    {topPerformer ? topPerformer.name.charAt(0) : '?'}
+                                <AvatarFallback className={cn("text-white text-[10px] font-bold", topPerformer ? getAvatarColor(topPerformer.name || '?') : 'bg-slate-200')}>
+                                    {topPerformer ? (topPerformer.name || '?').charAt(0) : '?'}
                                 </AvatarFallback>
                             </Avatar>
                         }
@@ -365,7 +353,7 @@ export default function Dashboard() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {reps.sort((a, b) => b.avgScore - a.avgScore).map((rep, i) => (
+                                {reps.sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0)).map((rep, i) => (
                                     <TableRow
                                         key={rep.email}
                                         className="border-slate-50 hover:bg-slate-50/50 transition-colors cursor-pointer group h-16"
@@ -382,24 +370,24 @@ export default function Dashboard() {
                                         <TableCell>
                                             <div className="flex items-center gap-3">
                                                 <Avatar className="h-9 w-9 ring-2 ring-white">
-                                                    <AvatarFallback className={cn("text-white text-xs font-bold", getAvatarColor(rep.name))}>
-                                                        {rep.name.charAt(0)}
+                                                    <AvatarFallback className={cn("text-white text-xs font-bold", getAvatarColor(rep.name || '?'))}>
+                                                        {(rep.name || '?').charAt(0)}
                                                     </AvatarFallback>
                                                 </Avatar>
-                                                <span className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition-colors uppercase">{rep.name}</span>
+                                                <span className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition-colors uppercase">{rep.name || 'Unknown'}</span>
                                             </div>
                                         </TableCell>
-                                        <TableCell className="text-sm font-medium text-slate-500">{rep.totalCalls}</TableCell>
+                                        <TableCell className="text-sm font-medium text-slate-500">{rep.totalCalls || 0}</TableCell>
                                         <TableCell>
                                             <div className="flex items-center gap-3 w-48">
-                                                <span className={cn("text-sm font-black min-w-[24px]", getScoreColor(rep.avgScore))}>
-                                                    {rep.avgScore.toFixed(1)}
+                                                <span className={cn("text-sm font-black min-w-[24px]", getScoreColor(rep.avgScore || 0))}>
+                                                    {(rep.avgScore || 0).toFixed(1)}
                                                 </span>
                                                 <Progress
-                                                    value={rep.avgScore * 10}
+                                                    value={(rep.avgScore || 0) * 10}
                                                     className="h-1 bg-slate-100 flex-1"
                                                     indicatorClassName={cn(
-                                                        rep.avgScore < 5 ? "bg-red-500" : rep.avgScore < 7 ? "bg-amber-500" : "bg-green-500"
+                                                        (rep.avgScore || 0) < 5 ? "bg-red-500" : (rep.avgScore || 0) < 7 ? "bg-amber-500" : "bg-green-500"
                                                     )}
                                                 />
                                             </div>
@@ -407,9 +395,9 @@ export default function Dashboard() {
                                         <TableCell className="text-right">
                                             <Badge variant="outline" className={cn(
                                                 "text-[10px] font-bold uppercase tracking-tight gap-1.5 py-1 px-3 border-none",
-                                                rep.avgScore >= 6 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+                                                (rep.avgScore || 0) >= 6 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
                                             )}>
-                                                {rep.avgScore >= 6 ? (
+                                                {(rep.avgScore || 0) >= 6 ? (
                                                     <><TrendingUp className="w-3 h-3" /> Improving</>
                                                 ) : (
                                                     <><AlertCircle className="w-3 h-3" /> Needs Coaching</>

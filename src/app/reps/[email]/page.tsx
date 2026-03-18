@@ -195,24 +195,24 @@ export default function RepProfilePage() {
                 {/* Profile Header */}
                 <div className="mb-10">
                     <h1 className="text-4xl font-black text-slate-900 tracking-tight font-outfit uppercase leading-none">
-                        {rep.name.toLowerCase().replace(/\s+/g, '')}
+                        {(rep.name || 'Unknown').toLowerCase().replace(/\s+/g, '')}
                     </h1>
-                    <p className="text-slate-400 text-sm font-semibold mt-2 tracking-wide truncate max-w-md">{rep.email}</p>
+                    <p className="text-slate-400 text-sm font-semibold mt-2 tracking-wide truncate max-w-md">{rep.email || decodedEmail}</p>
                 </div>
 
                 {/* KPI Row */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
                     <KPICard
                         title="OVERALL SCORE"
-                        value={`${rep.avgScore.toFixed(1)} / 10`}
+                        value={`${(rep.avgScore || 0).toFixed(1)} / 10`}
                         icon={<Activity className="w-5 h-5 text-indigo-600" />}
                         iconBg="bg-indigo-50"
                         content={
                             <Progress
-                                value={rep.avgScore * 10}
+                                value={(rep.avgScore || 0) * 10}
                                 className="h-1.5 bg-slate-100 mt-4"
                                 indicatorClassName={cn(
-                                    rep.avgScore < 5 ? "bg-red-500" : rep.avgScore < 7 ? "bg-amber-500" : "bg-green-500"
+                                    (rep.avgScore || 0) < 5 ? "bg-red-500" : (rep.avgScore || 0) < 7 ? "bg-amber-500" : "bg-green-500"
                                 )}
                             />
                         }
@@ -220,7 +220,7 @@ export default function RepProfilePage() {
 
                     <KPICard
                         title="TOTAL CALLS"
-                        value={`${rep.totalCalls} Analyzed`}
+                        value={`${rep.totalCalls || 0} Analyzed`}
                         subtext="Last 30 days"
                         icon={<Clock className="w-5 h-5 text-blue-600" />}
                         iconBg="bg-blue-50"
@@ -262,7 +262,7 @@ export default function RepProfilePage() {
                         </div>
                         <h2 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">AI Insights Ready</h2>
                         <p className="text-slate-500 max-w-xl mb-10 text-base font-medium leading-relaxed">
-                            Generate a customized training plan and performance analysis for {rep.name} based on their call history.
+                            Generate a customized training plan and performance analysis for {rep.name || 'this rep'} based on their call history.
                         </p>
                         <Button
                             className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold h-14 px-10 rounded-2xl shadow-2xl shadow-indigo-200 gap-3 text-sm uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-[0.98]"

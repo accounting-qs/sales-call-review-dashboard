@@ -105,38 +105,46 @@ export default function CallDetailPage() {
         </div>
     );
 
-    const getCall1Sections = (data: any) => [
-        { id: 'intro', label: 'Intro / Pitch Frame', data: data.intro },
-        { id: 'bizAnalysis', label: 'Business Analysis', data: data.bizAnalysis },
-        { id: 'challenges', label: 'Challenges / Current Marketing', data: data.challenges },
-        { id: 'goals', label: 'Goals / Vision', data: data.goals },
-        { id: 'transition', label: 'Transition to Pitch', data: data.transition },
-        { id: 'funnelFlow', label: 'Funnel Flow Demonstration', data: data.funnelFlow },
-        { id: 'timeline', label: 'Timeline & Roadmap', data: data.timeline },
-        { id: 'roiCalc', label: 'ROI Calculator', data: data.roiCalc },
-        { id: 'tempCheck', label: 'Temp Check', data: data.tempCheck },
-        { id: 'priceDrop', label: 'Price Drop', data: data.priceDrop },
-        { id: 'objections', label: 'Objection Handling', data: data.objections },
-        { id: 'decisionLeadership', label: 'Decision Leadership & Timeline', data: data.decisionLeadership },
-        { id: 'booking', label: 'Booking & Post-Call Frame', data: data.booking },
-    ];
+    const getCall1Sections = (data: any) => {
+        if (!data) return [];
+        return [
+            { id: 'intro', label: 'Intro / Pitch Frame', data: data.intro },
+            { id: 'bizAnalysis', label: 'Business Analysis', data: data.bizAnalysis },
+            { id: 'challenges', label: 'Challenges / Current Marketing', data: data.challenges },
+            { id: 'goals', label: 'Goals / Vision', data: data.goals },
+            { id: 'transition', label: 'Transition to Pitch', data: data.transition },
+            { id: 'funnelFlow', label: 'Funnel Flow Demonstration', data: data.funnelFlow },
+            { id: 'timeline', label: 'Timeline & Roadmap', data: data.timeline },
+            { id: 'roiCalc', label: 'ROI Calculator', data: data.roiCalc },
+            { id: 'tempCheck', label: 'Temp Check', data: data.tempCheck },
+            { id: 'priceDrop', label: 'Price Drop', data: data.priceDrop },
+            { id: 'objections', label: 'Objection Handling', data: data.objections },
+            { id: 'decisionLeadership', label: 'Decision Leadership & Timeline', data: data.decisionLeadership },
+            { id: 'booking', label: 'Booking & Post-Call Frame', data: data.booking },
+        ];
+    };
 
-    const getCall2Sections = (data: any) => [
-        { id: 'intro', label: 'S1: Intro', data: data.intro },
-        { id: 'technicalQuestions', label: 'S2: Technical Questions', data: data.technicalQuestions },
-        { id: 'sevenBehaviours', label: 'S3: 7 Behaviours', data: data.sevenBehaviours },
-        { id: 'refundExplanation', label: 'S4: Refund Explanation', data: data.refundExplanation },
-        { id: 'tempCheckObjections', label: 'S5: Temp Check & Objections', data: data.tempCheckObjections },
-        { id: 'rePriceDrop', label: 'S6: Re-Price Drop', data: data.rePriceDrop },
-        { id: 'contractReview', label: 'S7: Contract Review', data: data.contractReview },
-        { id: 'closing', label: 'S8: Closing', data: data.closing },
-    ];
+    const getCall2Sections = (data: any) => {
+        if (!data) return [];
+        return [
+            { id: 'intro', label: 'S1: Intro', data: data.intro },
+            { id: 'technicalQuestions', label: 'S2: Technical Questions', data: data.technicalQuestions },
+            { id: 'sevenBehaviours', label: 'S3: 7 Behaviours', data: data.sevenBehaviours },
+            { id: 'refundExplanation', label: 'S4: Refund Explanation', data: data.refundExplanation },
+            { id: 'tempCheckObjections', label: 'S5: Temp Check & Objections', data: data.tempCheckObjections },
+            { id: 'rePriceDrop', label: 'S6: Re-Price Drop', data: data.rePriceDrop },
+            { id: 'contractReview', label: 'S7: Contract Review', data: data.contractReview },
+            { id: 'closing', label: 'S8: Closing', data: data.closing },
+        ];
+    };
 
     let sections: { id: string; label: string; data: any }[] = [];
     if (analysis) {
         sections = analysis.callType === 'evaluation'
             ? getCall1Sections(analysis.sections)
             : getCall2Sections(analysis.sections);
+            
+        sections = sections.filter(s => s.data && typeof s.data.score === 'number');
     }
 
     return (
@@ -239,7 +247,7 @@ export default function CallDetailPage() {
                                         "font-bold",
                                         analysis.scriptAlignment === 'aligned' ? 'text-green-600' : 'text-amber-600'
                                     )}>
-                                        {analysis.scriptAlignment.replace('_', ' ').toUpperCase()}
+                                        {analysis.scriptAlignment?.replace('_', ' ').toUpperCase() || 'UNKNOWN'}
                                     </span>
                                 </div>
                                 {analysis.miscellaneous && (
@@ -266,7 +274,7 @@ export default function CallDetailPage() {
                             </CardHeader>
                             <CardContent className="p-6">
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    {analysis?.topCoachingPriorities.map((priority, i) => (
+                                    {(analysis?.topCoachingPriorities || []).map((priority, i) => (
                                         <div key={i} className="flex flex-col gap-2 p-4 bg-slate-50 rounded-xl border border-slate-100">
                                             <span className="text-[10px] font-black text-indigo-600 uppercase">Priority {i + 1}</span>
                                             <p className="text-sm font-bold text-slate-800 leading-snug">{priority}</p>

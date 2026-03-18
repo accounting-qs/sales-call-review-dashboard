@@ -40,7 +40,7 @@ const getScoreColor = (score: number) => {
 };
 
 const getAvatarColor = (name: string) => {
-    const char = name.charAt(0).toUpperCase();
+    const char = (name || '?').charAt(0).toUpperCase();
     if (['J', 'A', 'S', 'O', 'N'].includes(char)) return 'bg-indigo-600';
     if (['M', 'E', 'L', 'I'].includes(char)) return 'bg-purple-600';
     return 'bg-slate-400';
@@ -107,8 +107,8 @@ export function Sidebar() {
     const isManager = user?.role === 'manager' || !user; // default to manager for demo
 
     const filteredReps = reps.filter(rep =>
-        rep.name.toLowerCase().includes(search.toLowerCase()) ||
-        rep.email.toLowerCase().includes(search.toLowerCase())
+        (rep.name || 'Unknown').toLowerCase().includes(search.toLowerCase()) ||
+        (rep.email || '').toLowerCase().includes(search.toLowerCase())
     );
 
     return (
@@ -260,28 +260,28 @@ export function Sidebar() {
                                                 )}
                                             >
                                                 <Avatar className="h-8 w-8 ring-2 ring-white">
-                                                    <AvatarFallback className={cn("text-white text-xs font-bold", getAvatarColor(rep.name))}>
-                                                        {rep.name.charAt(0)}
+                                                    <AvatarFallback className={cn("text-white text-[10px] font-bold", getAvatarColor(rep.name || '?'))}>
+                                                        {(rep.name || '?').charAt(0)}
                                                     </AvatarFallback>
                                                 </Avatar>
 
-                                                <div className="flex-1 min-w-0 pr-6">
-                                                    <p className={cn(
-                                                        "text-sm font-medium truncate",
-                                                        pathname === `/reps/${rep.email}` ? "text-slate-900" : "text-slate-600 group-hover:text-slate-900"
-                                                    )}>
-                                                        {rep.name}
-                                                    </p>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-[10px] text-slate-400 font-medium">
-                                                            {rep.totalCalls} Calls
-                                                        </span>
-                                                        <div className={cn("w-1 h-1 rounded-full", getScoreColor(rep.avgScore))} />
-                                                        <span className="text-[10px] text-slate-400 font-medium">
-                                                            {rep.avgScore.toFixed(1)} Avg
-                                                        </span>
+                                                    <div className="flex flex-col flex-1 min-w-0">
+                                                        <p className={cn(
+                                                            "text-sm font-medium truncate",
+                                                            pathname === `/reps/${rep.email}` ? "text-slate-900" : "text-slate-600 group-hover:text-slate-900"
+                                                        )}>
+                                                            <span className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition-colors uppercase truncate max-w-[120px]">{rep.name || 'Unknown'}</span>
+                                                        </p>
+                                                        <div className="flex items-center gap-2 mt-0.5">
+                                                            <span className="text-[10px] text-slate-400 font-medium">
+                                                                {rep.totalCalls || 0} Calls
+                                                            </span>
+                                                            <div className={cn("w-1 h-1 rounded-full", getScoreColor(rep.avgScore || 0))} />
+                                                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">
+                                                                {(rep.avgScore || 0).toFixed(1)} Avg
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                </div>
                                             </Link>
 
                                             <DropdownMenu>

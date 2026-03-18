@@ -75,19 +75,15 @@ export function formatClickUpMessage(
 🔗 **Link:** {{link}}
 ⏱️ **Duration:** {{duration}} min
 
-<details>
-<summary>🔎 **Click to see full AI Review**</summary>
-
-{{analysis}}
+🔎 **AI Review Summary**
+> {{analysis}}
 
 **Quick Stats:**
 - **Alignment:** {{alignment}}
 - **Score:** {{score}}/10
 - **Risk:** {{risk}}
 
-[Full Report]({{link}})
-[Recording]({{transcript}})
-</details>`;
+[Full Report]({{link}}) | [Recording]({{transcript}})`;
 
     let message = template || DEFAULT_TEMPLATE;
 
@@ -97,9 +93,9 @@ export function formatClickUpMessage(
         '{{title}}': title,
         '{{date}}': date,
         '{{link}}': docLink,
-        '{{duration}}': duration.toString(),
+        '{{duration}}': Math.round(duration).toString(),
         '{{analysis}}': analysis?.callAnalysis || analysis?.outcome || 'Analysis in progress...',
-        '{{score}}': (analysis?.totalScore || 0).toString(),
+        '{{score}}': ((analysis?.totalScore || 0) / 10).toFixed(1),
         '{{risk}}': (analysis?.dealRisk || 'N/A').toUpperCase(),
         '{{alignment}}': (analysis?.scriptAlignment || 'N/A').toUpperCase(),
         '{{transcript}}': transcriptUrl

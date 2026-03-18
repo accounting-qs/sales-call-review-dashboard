@@ -147,7 +147,7 @@ export async function processSingleCall(t: any, callType: 'evaluation' | 'follow
             t.title,
             new Date(t.date).toLocaleDateString(),
             t.duration,
-            `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/calls/${t.id}`,
+            `${process.env.NEXT_PUBLIC_APP_URL || 'https://sales-call-review-dashboard--sales-review-dashboard.us-east4.hosted.app'}/calls/${t.id}`,
             t.transcript_url,
             analysis,
             settings.clickupTemplate

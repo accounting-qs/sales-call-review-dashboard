@@ -89,19 +89,15 @@ const DEFAULT_TEMPLATE = `==📊 **New Audited Call** ==
 🔗 **Link:** {{link}}
 ⏱️ **Duration:** {{duration}} min
 
-<details>
-<summary>🔎 **Click to see full AI Review**</summary>
-
-{{analysis}}
+🔎 **AI Review Summary**
+> {{analysis}}
 
 **Quick Stats:**
 - **Alignment:** {{alignment}}
 - **Score:** {{score}}/10
 - **Risk:** {{risk}}
 
-[Full Report]({{link}})
-[Recording]({{transcript}})
-</details>`;
+[Full Report]({{link}}) | [Recording]({{transcript}})`;
 
 export default function SyncPage() {
     const [transcripts, setTranscripts] = useState<FirefliesTranscript[]>([]);

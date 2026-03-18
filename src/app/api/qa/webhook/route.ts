@@ -21,7 +21,7 @@ export async function POST() {
             .replace('{{title}}', 'QA Integration Mock Call')
             .replace('{{date}}', new Date().toLocaleDateString())
             .replace('{{duration}}', '45')
-            .replace('{{link}}', 'http://localhost:3000/calls/mock-123')
+            .replace('{{link}}', 'https://sales-call-review-dashboard--sales-review-dashboard.us-east4.hosted.app/calls/mock-123')
             .replace('{{analysis}}', 'This is a mock AI analysis validating that the ClickUp native channel integration correctly parses markdown templates.')
             .replace('{{alignment}}', 'High')
             .replace('{{score}}', '9')

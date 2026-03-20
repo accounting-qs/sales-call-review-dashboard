@@ -1,7 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { GoogleAIFileManager } from '@google/generative-ai/server';
-import { initializeApp, getApps } from 'firebase-admin/app';
-import { getStorage as getAdminStorage } from 'firebase-admin/storage';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -10,20 +8,10 @@ import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 
 export const maxDuration = 300; // 5 minutes for batch renewal
 
-function getStorageBucket() {
-    if (getApps().length === 0) {
-        initializeApp({
-            projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-            storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-        });
-    }
-    return getAdminStorage().bucket();
-}
-
 /**
  * GET /api/cron/rag-refresh
  * Checks all knowledge_base documents for expiring Gemini files.
- * Re-uploads any that expire within the next 6 hours.
+ * Re-uploads any that expire within the next 6 hours using the base64 backup in Firestore.
  */
 export async function GET(request: Request) {
     // Security: require CRON_SECRET
@@ -70,7 +58,7 @@ export async function GET(request: Request) {
         for (const kbDoc of kbSnapshot.docs) {
             const data = kbDoc.data();
             const geminiFileId = data.geminiFileId;
-            const storagePath = data.storagePath;
+            const fileBase64 = data.fileBase64;
 
             if (!geminiFileId) {
                 skipped++;
@@ -105,8 +93,8 @@ export async function GET(request: Request) {
             }
 
             if (needsRenewal) {
-                if (!storagePath) {
-                    console.warn(`[CRON RAG Refresh] "${data.name}" has no storagePath. Cannot auto-renew.`);
+                if (!fileBase64) {
+                    console.warn(`[CRON RAG Refresh] "${data.name}" has no base64 backup. Cannot auto-renew.`);
                     await updateDoc(doc(db, 'knowledge_base', kbDoc.id), {
                         status: 'Expired — Re-upload required',
                         expiresAt: null,
@@ -116,23 +104,10 @@ export async function GET(request: Request) {
                 }
 
                 try {
-                    const bucket = getStorageBucket();
-                    const storageFile = bucket.file(storagePath);
-                    const [exists] = await storageFile.exists();
-
-                    if (!exists) {
-                        console.warn(`[CRON RAG Refresh] Storage file not found: ${storagePath}`);
-                        await updateDoc(doc(db, 'knowledge_base', kbDoc.id), {
-                            status: 'Expired — Re-upload required',
-                            expiresAt: null,
-                        });
-                        errors++;
-                        continue;
-                    }
-
                     const safeName = (data.name || 'doc.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
                     const tempPath = join(tmpdir(), `cron-renew-${Date.now()}-${safeName}`);
-                    await storageFile.download({ destination: tempPath });
+                    const buffer = Buffer.from(fileBase64, 'base64');
+                    await writeFile(tempPath, buffer);
 
                     // Delete old file from Gemini (ignore errors)
                     try { await fileManager.deleteFile(geminiFileId); } catch {}

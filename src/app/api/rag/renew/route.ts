@@ -1,37 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleAIFileManager } from '@google/generative-ai/server';
-import { initializeApp, getApps } from 'firebase-admin/app';
-import { getStorage as getAdminStorage } from 'firebase-admin/storage';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { db } from '@/lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 
 export const maxDuration = 120;
 
-function getStorageBucket() {
-    if (getApps().length === 0) {
-        initializeApp({
-            projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-            storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-        });
-    }
-    return getAdminStorage().bucket();
-}
-
 /**
  * POST /api/rag/renew
- * Re-uploads a document from Firebase Storage to Gemini File API,
+ * Re-uploads a document to Gemini File API from the base64 backup stored in Firestore,
  * then updates the Firestore knowledge_base record with fresh Gemini file data.
  */
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { docId, storagePath, fileName, mimeType } = body;
+        const { docId } = body;
 
-        if (!docId || !storagePath) {
-            return NextResponse.json({ error: 'Missing docId or storagePath' }, { status: 400 });
+        if (!docId) {
+            return NextResponse.json({ error: 'Missing docId' }, { status: 400 });
         }
 
         const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -39,34 +27,44 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'GEMINI_API_KEY missing' }, { status: 500 });
         }
 
-        console.log(`[RAG Renew] Renewing "${fileName}" from Storage path: ${storagePath}`);
+        // 1. Read the document from Firestore (includes base64 backup)
+        const docRef = doc(db, 'knowledge_base', docId);
+        const docSnap = await getDoc(docRef);
 
-        // 1. Download from Firebase Storage to temp file
-        const bucket = getStorageBucket();
-        const file = bucket.file(storagePath);
-        const [exists] = await file.exists();
+        if (!docSnap.exists()) {
+            return NextResponse.json({ error: 'Document not found in knowledge_base' }, { status: 404 });
+        }
 
-        if (!exists) {
+        const data = docSnap.data();
+        const fileBase64 = data.fileBase64;
+
+        if (!fileBase64) {
             return NextResponse.json({ 
-                error: 'File not found in Firebase Storage. Manual re-upload required.',
-                code: 'STORAGE_NOT_FOUND'
+                error: 'No backup data found for this document. Please re-upload the file manually.',
+                code: 'NO_BACKUP'
             }, { status: 404 });
         }
 
-        const safeName = (fileName || 'document.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
-        const tempPath = join(tmpdir(), `renew-${Date.now()}-${safeName}`);
-        await file.download({ destination: tempPath });
+        const fileName = data.name || 'document.pdf';
+        const mimeType = data.mimeType || 'application/pdf';
 
-        // 2. Re-upload to Gemini File API
+        console.log(`[RAG Renew] Renewing "${fileName}" from Firestore backup...`);
+
+        // 2. Write base64 to temp file
+        const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const tempPath = join(tmpdir(), `renew-${Date.now()}-${safeName}`);
+        const buffer = Buffer.from(fileBase64, 'base64');
+        await writeFile(tempPath, buffer);
+
+        // 3. Re-upload to Gemini File API
         const fileManager = new GoogleAIFileManager(GEMINI_API_KEY);
         const uploadResult = await fileManager.uploadFile(tempPath, {
-            mimeType: mimeType || 'application/pdf',
-            displayName: fileName || 'document.pdf',
+            mimeType,
+            displayName: fileName,
         });
         const geminiFile = uploadResult.file;
 
-        // 3. Update Firestore knowledge_base document with new Gemini references
-        const docRef = doc(db, 'knowledge_base', docId);
+        // 4. Update Firestore knowledge_base document with new Gemini references
         await updateDoc(docRef, {
             geminiFileId: geminiFile.name,
             geminiFileUri: geminiFile.uri,
@@ -75,10 +73,10 @@ export async function POST(req: NextRequest) {
             lastRenewedAt: new Date().toISOString(),
         });
 
-        // 4. Cleanup temp
+        // 5. Cleanup temp
         try { await unlink(tempPath); } catch {}
 
-        console.log(`[RAG Renew] Successfully renewed "${fileName}". New file: ${geminiFile.name}, expires: ${(geminiFile as any).expirationTime}`);
+        console.log(`[RAG Renew] ✅ Renewed "${fileName}" → ${geminiFile.name}`);
 
         return NextResponse.json({ 
             success: true,

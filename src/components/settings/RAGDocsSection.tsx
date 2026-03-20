@@ -131,7 +131,7 @@ export function RAGDocsSection() {
                     chunks: 'Managed by Gemini',
                     uploadedAt: new Date().toISOString(),
                     expiresAt: geminiFile.expirationTime || null,
-                    storagePath: data.storagePath || null,
+                    fileBase64: data.fileBase64 || null,
                     useInCall1: true,
                     useInCall2: true,
                 });
@@ -178,8 +178,8 @@ export function RAGDocsSection() {
     };
 
     const handleRenew = async (docObj: any) => {
-        if (!docObj.storagePath) {
-            alert('This document does not have a backup in Firebase Storage. Please re-upload it manually.');
+        if (!docObj.fileBase64) {
+            alert('This document does not have a backup. Please re-upload it manually.');
             return;
         }
         setRenewingId(docObj.id);
@@ -187,12 +187,7 @@ export function RAGDocsSection() {
             const res = await fetch('/api/rag/renew', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    docId: docObj.id,
-                    storagePath: docObj.storagePath,
-                    fileName: docObj.name,
-                    mimeType: docObj.mimeType,
-                })
+                body: JSON.stringify({ docId: docObj.id })
             });
             if (!res.ok) {
                 const err = await res.json();
@@ -280,7 +275,7 @@ export function RAGDocsSection() {
                                     <TableCell className="pl-8">
                                         <div className="flex flex-col">
                                             <span className="font-bold text-slate-900 text-sm">{d.name}</span>
-                                            {d.storagePath ? (
+                                            {d.fileBase64 ? (
                                                 <span className="text-[9px] text-emerald-500 font-semibold flex items-center gap-1 mt-0.5">
                                                     <ShieldCheck className="w-2.5 h-2.5" /> Backup saved
                                                 </span>
@@ -312,7 +307,7 @@ export function RAGDocsSection() {
                                                     {isMissing ? 'Expired' : expInfo.label}
                                                 </span>
                                             </div>
-                                            {(isExpired || isMissing || expInfo.urgency === 'critical') && d.storagePath && (
+                                            {(isExpired || isMissing || expInfo.urgency === 'critical') && d.fileBase64 && (
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
@@ -361,7 +356,7 @@ export function RAGDocsSection() {
                                     </TableCell>
                                     <TableCell className="text-right pr-8">
                                         <div className="flex items-center justify-end gap-1">
-                                            {d.storagePath && (
+                                            {d.fileBase64 && (
                                                 <Button
                                                     onClick={() => handleRenew(d)}
                                                     variant="ghost"

@@ -19,7 +19,7 @@ interface KnowledgeDoc {
     useInCall2: boolean;
     // Expiration and auto-renewal fields
     expiresAt?: string | null;
-    storagePath?: string | null;
+    fileBase64?: string | null;
     lastRenewedAt?: string | null;
 }
 

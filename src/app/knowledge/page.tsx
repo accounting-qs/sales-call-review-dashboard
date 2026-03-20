@@ -105,7 +105,7 @@ export default function KnowledgeBasePage() {
                     chunks: 'Managed by Gemini',
                     uploadedAt: new Date().toISOString(),
                     expiresAt: geminiFile.expirationTime || null,
-                    storagePath: data.storagePath || null,
+                    fileBase64: data.fileBase64 || null,
                     useInCall1: true,
                     useInCall2: true,
                 });
@@ -131,7 +131,7 @@ export default function KnowledgeBasePage() {
     };
 
     const handleRenew = async (docObj: any) => {
-        if (!docObj.storagePath) {
+        if (!docObj.fileBase64) {
             alert('No backup available. Please re-upload the file manually.');
             return;
         }
@@ -140,12 +140,7 @@ export default function KnowledgeBasePage() {
             const res = await fetch('/api/rag/renew', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    docId: docObj.id,
-                    storagePath: docObj.storagePath,
-                    fileName: docObj.name,
-                    mimeType: docObj.mimeType,
-                }),
+                body: JSON.stringify({ docId: docObj.id }),
             });
             if (!res.ok) {
                 const err = await res.json();
@@ -254,7 +249,7 @@ export default function KnowledgeBasePage() {
                                                 <span className="text-xs text-slate-400">
                                                     {docItem.sizeStr || 'Unknown'} • {docItem.mimeType || 'document'}
                                                 </span>
-                                                {docItem.storagePath ? (
+                                                {docItem.fileBase64 ? (
                                                     <span className="text-[9px] text-emerald-500 font-semibold flex items-center gap-0.5">
                                                         <ShieldCheck className="w-2.5 h-2.5" /> Backed up
                                                     </span>
@@ -272,7 +267,7 @@ export default function KnowledgeBasePage() {
                                                         {isMissing ? 'File expired from Gemini' : expInfo.label}
                                                     </span>
                                                 </div>
-                                                {(isExpired || isMissing || expInfo.urgency === 'critical') && docItem.storagePath && (
+                                                {(isExpired || isMissing || expInfo.urgency === 'critical') && docItem.fileBase64 && (
                                                     <Button
                                                         variant="outline"
                                                         size="sm"
@@ -324,7 +319,7 @@ export default function KnowledgeBasePage() {
                                             </div>
 
                                             <div className="flex flex-col gap-1">
-                                                {docItem.storagePath && (
+                                                {docItem.fileBase64 && (
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"

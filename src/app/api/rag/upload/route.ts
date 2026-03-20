@@ -1,23 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleAIFileManager } from '@google/generative-ai/server';
-import { writeFile, unlink } from 'fs/promises';
+import { writeFile, readFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getStorage as getAdminStorage } from 'firebase-admin/storage';
 
 export const maxDuration = 60;
-
-// Initialize firebase-admin for server-side Storage access
-function getStorageBucket() {
-    if (getApps().length === 0) {
-        initializeApp({
-            projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-            storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-        });
-    }
-    return getAdminStorage().bucket();
-}
 
 export async function POST(req: NextRequest) {
     try {
@@ -35,7 +22,7 @@ export async function POST(req: NextRequest) {
 
         const fileManager = new GoogleAIFileManager(GEMINI_API_KEY);
 
-        // Convert file to temporary local file
+        // Convert file to temporary local file because fileManager.uploadFile requires a local path
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -49,25 +36,15 @@ export async function POST(req: NextRequest) {
         });
         const returnedFile = uploadResult.file;
 
-        // 2. Save a permanent backup copy to Firebase Storage
-        let storagePath = '';
+        // 2. Store the raw file as base64 in Firestore for permanent backup
+        //    (Firebase Storage via admin SDK causes build failures on App Hosting,
+        //     so we store as base64 in the Firestore doc instead)
+        let fileBase64 = '';
         try {
-            storagePath = `rag_documents/${safeName}`;
-            const bucket = getStorageBucket();
-            await bucket.upload(tempPath, {
-                destination: storagePath,
-                metadata: {
-                    contentType: file.type || 'application/pdf',
-                    metadata: {
-                        originalName: file.name,
-                        uploadedAt: new Date().toISOString(),
-                    }
-                }
-            });
-            console.log(`[RAG Upload] Backed up to Firebase Storage: ${storagePath}`);
-        } catch (storageErr: any) {
-            console.warn('[RAG Upload] Firebase Storage backup failed (non-blocking):', storageErr.message);
-            storagePath = ''; // Non-critical, continue without backup
+            const fileData = await readFile(tempPath);
+            fileBase64 = fileData.toString('base64');
+        } catch (err) {
+            console.warn('[RAG Upload] Could not read file for backup:', err);
         }
 
         // 3. Cleanup temp file
@@ -84,7 +61,7 @@ export async function POST(req: NextRequest) {
                 createTime: returnedFile.createTime,
                 expirationTime: (returnedFile as any).expirationTime || null,
             },
-            storagePath
+            fileBase64, // Returned to client to store in Firestore
         });
 
     } catch (error: any) {

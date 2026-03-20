@@ -2,7 +2,7 @@ import { fetchTranscripts, getTranscriptDetails, formatTranscript } from "./fire
 import { analyzeSalesCall } from "./gemini";
 import { sendClickUpNotification, formatClickUpMessage } from "./clickup";
 import { db } from "../firebase";
-import { collection, query, where, getDocs, getDoc, doc, setDoc, Timestamp } from "firebase/firestore";
+import { collection, query, where, getDocs, getDoc, doc, setDoc, updateDoc, Timestamp } from "firebase/firestore";
 import { Analysis, Call } from "@/types";
 
 export async function processLatestCalls() {
@@ -182,6 +182,8 @@ async function ensureRepExists(email: string, title?: string) {
         await setDoc(repRef, {
             email,
             name: name,
+            totalCalls: 0,
+            avgScore: 0,
             createdAt: Timestamp.now(),
             isActive: true
         });
@@ -191,6 +193,7 @@ async function ensureRepExists(email: string, title?: string) {
 
 async function saveAnalysisToFirestore(t: any, metadata: any, analysis: Analysis) {
     const callId = t.id;
+    const repEmail = metadata.repEmail;
 
     // Save Call Record
     await setDoc(doc(db, "calls", callId), {
@@ -211,4 +214,35 @@ async function saveAnalysisToFirestore(t: any, metadata: any, analysis: Analysis
         callId: callId,
         analyzedAt: Timestamp.now()
     });
+
+    // Update rep's totalCalls and avgScore from all their analyses
+    if (repEmail) {
+        await updateRepStats(repEmail);
+    }
+}
+
+async function updateRepStats(repEmail: string) {
+    try {
+        const analysesRef = collection(db, 'analyses');
+        const q = query(analysesRef, where('repEmail', '==', repEmail));
+        const snapshot = await getDocs(q);
+
+        const totalCalls = snapshot.size;
+        let totalScore = 0;
+        snapshot.forEach((docSnap) => {
+            totalScore += docSnap.data().totalScore || 0;
+        });
+        const avgScore = totalCalls > 0 ? totalScore / totalCalls : 0;
+
+        const repRef = doc(db, 'reps', repEmail);
+        await updateDoc(repRef, {
+            totalCalls,
+            avgScore,
+            lastUpdated: Timestamp.now()
+        });
+
+        console.log(`[Orchestrator] Updated rep stats for ${repEmail}: ${totalCalls} calls, avg ${avgScore.toFixed(1)}`);
+    } catch (error) {
+        console.error(`[Orchestrator] Failed to update rep stats for ${repEmail}:`, error);
+    }
 }

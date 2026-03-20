@@ -209,7 +209,7 @@ export default function CallDetailPage() {
                     <div className="flex items-center gap-4">
                         <Card className="border-none shadow-sm bg-indigo-600 text-white p-4 min-w-[140px] text-center">
                             <p className="text-[10px] font-bold uppercase tracking-widest opacity-70 mb-1">Overall Score</p>
-                            <h2 className="text-3xl font-black">{(analysis?.totalScore || 0).toFixed(1)} <span className="text-sm font-medium opacity-50">/ 100</span></h2>
+                            <h2 className="text-3xl font-black">{(analysis?.totalScore || 0).toFixed(1)} <span className="text-sm font-medium opacity-50">/ 10</span></h2>
                         </Card>
                         <Card className="border-none shadow-sm bg-white p-4 min-w-[140px] text-center">
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Deal Risk</p>

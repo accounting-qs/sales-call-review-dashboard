@@ -17,6 +17,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "firebase": "^12.10.0",
+    "firebase-admin": "^13.7.0",
     "googleapis": "^126.0.1",
     "lucide-react": "^0.576.0",
     "next": "16.1.6",

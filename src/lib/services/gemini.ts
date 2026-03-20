@@ -24,15 +24,25 @@ export async function analyzeSalesCall(
         console.warn('Could not fetch dynamic model from settings. Using default.', err);
     }
 
-    // 1. Fetch relevant reference docs
-    const q = query(collection(db, 'knowledge_base'), where('isActive', '==', true));
+    // 1. Fetch relevant reference docs filtered by call type
+    // Use the call-type-specific field: useInCall1 for evaluation, useInCall2 for followup
+    const callField = callType === 'evaluation' ? 'useInCall1' : 'useInCall2';
+    const q = query(collection(db, 'knowledge_base'), where(callField, '==', true));
     const docsSnapshot = await getDocs(q);
     const selectedFileParts: any[] = [];
     const selectedDocNames: string[] = [];
+
+    // Also fetch legacy docs that only have `isActive` (backward compat)
+    const legacyQ = query(collection(db, 'knowledge_base'), where('isActive', '==', true));
+    const legacySnapshot = await getDocs(legacyQ);
+    const seenIds = new Set<string>();
     
-    docsSnapshot.docs.forEach(d => {
+    // Helper to add a doc if it has valid file data
+    const addDoc = (d: any) => {
+        if (seenIds.has(d.id)) return;
         const data = d.data();
         if (data.geminiFileUri && data.mimeType) {
+            seenIds.add(d.id);
             selectedDocNames.push(data.name);
             selectedFileParts.push({
                 fileData: {
@@ -40,6 +50,15 @@ export async function analyzeSalesCall(
                     fileUri: data.geminiFileUri
                 }
             });
+        }
+    };
+
+    docsSnapshot.docs.forEach(addDoc);
+    // Include legacy docs that don't have the new fields yet
+    legacySnapshot.docs.forEach(d => {
+        const data = d.data();
+        if (data[callField] === undefined && data.isActive === true) {
+            addDoc(d);
         }
     });
 
@@ -49,12 +68,21 @@ export async function analyzeSalesCall(
         ? promptSettings.call1Prompt
         : promptSettings.call2Prompt;
 
+    const callTypeLabel = callType === 'evaluation' ? 'CALL 1 (Business Evaluation)' : 'CALL 2 (Follow-Up)';
+
     const userPromptContent = `
-        # REFERENCE DOCUMENTS TO USE
-        Please strictly reference any internal documents or files provided in the data attachments alongside this prompt. They represent our canonical frameworks.
-        Prioritize information from these specific sources: ${selectedDocNames.join(', ')}
+        # ANALYSIS TYPE: ${callTypeLabel}
+        You are analyzing a ${callTypeLabel} transcript. Apply ONLY the ${callTypeLabel} scoring framework.
+
+        # REFERENCE DOCUMENTS ATTACHED (${selectedDocNames.length} documents)
+        The following ${selectedDocNames.length} documents have been specifically selected for this ${callTypeLabel} analysis and are attached as file data alongside this prompt. They represent our canonical frameworks for this call type.
+        You MUST strictly reference these documents and use them as your primary scoring rubric:
+        ${selectedDocNames.map((name, i) => `${i + 1}. "${name}"`).join('\n        ')}
+
+        ${selectedDocNames.length === 0 ? '⚠️ WARNING: No reference documents were provided for this call type. Score using the system prompt instructions only.' : ''}
 
         # CALL INFORMATION
+        **Call Type:** ${callTypeLabel}
         **Call ID:** ${metadata.id}
         **Call Title:** ${metadata.title}
         **Date:** ${metadata.date instanceof Timestamp ? metadata.date.toDate().toLocaleDateString() : 'Unknown'}
@@ -74,15 +102,16 @@ export async function analyzeSalesCall(
             { 
                 role: "user", 
                 parts: [
-                    ...selectedFileParts, // Inject PDF documents directly into the context window
+                    ...selectedFileParts, // Inject ONLY the docs enabled for this call type
                     { text: systemPrompt + "\n\n" + userPromptContent }
                 ] 
             }
         ]
     };
 
-    console.log(`[Gemini] Starting analysis for ${metadata.title} using ${selectedModel}...`);
-    console.log(`[Gemini] Appended ${selectedFileParts.length} active documents to the context.`);
+    console.log(`[Gemini] Starting ${callTypeLabel} analysis for "${metadata.title}" using ${selectedModel}...`);
+    console.log(`[Gemini] Call type: ${callType} → Filtered by field: ${callField}`);
+    console.log(`[Gemini] Injected ${selectedFileParts.length} documents: ${selectedDocNames.join(', ') || '(none)'}`);
 
     const response = await fetch(url, {
         method: 'POST',

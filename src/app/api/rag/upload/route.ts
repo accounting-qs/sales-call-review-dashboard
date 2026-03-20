@@ -1,10 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleAIFileManager } from '@google/generative-ai/server';
-import { writeFile } from 'fs/promises';
+import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getStorage as getAdminStorage } from 'firebase-admin/storage';
 
-export const maxDuration = 60; // Allow more time for large file uploads if hosted on Vercel
+export const maxDuration = 60;
+
+// Initialize firebase-admin for server-side Storage access
+function getStorageBucket() {
+    if (getApps().length === 0) {
+        initializeApp({
+            projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+            storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+        });
+    }
+    return getAdminStorage().bucket();
+}
 
 export async function POST(req: NextRequest) {
     try {
@@ -22,31 +35,56 @@ export async function POST(req: NextRequest) {
 
         const fileManager = new GoogleAIFileManager(GEMINI_API_KEY);
 
-        // Convert file to temporary local file because fileManager.uploadFile requires a local path
+        // Convert file to temporary local file
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
-        const tempPath = join(tmpdir(), `${Date.now()}-${file.name}`);
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const tempPath = join(tmpdir(), `${Date.now()}-${safeName}`);
         await writeFile(tempPath, buffer);
 
-        // Upload to Gemini
+        // 1. Upload to Gemini File API
         const uploadResult = await fileManager.uploadFile(tempPath, {
             mimeType: file.type || 'application/pdf',
             displayName: file.name,
         });
-
-        // The uploaded file representation
         const returnedFile = uploadResult.file;
+
+        // 2. Save a permanent backup copy to Firebase Storage
+        let storagePath = '';
+        try {
+            storagePath = `rag_documents/${safeName}`;
+            const bucket = getStorageBucket();
+            await bucket.upload(tempPath, {
+                destination: storagePath,
+                metadata: {
+                    contentType: file.type || 'application/pdf',
+                    metadata: {
+                        originalName: file.name,
+                        uploadedAt: new Date().toISOString(),
+                    }
+                }
+            });
+            console.log(`[RAG Upload] Backed up to Firebase Storage: ${storagePath}`);
+        } catch (storageErr: any) {
+            console.warn('[RAG Upload] Firebase Storage backup failed (non-blocking):', storageErr.message);
+            storagePath = ''; // Non-critical, continue without backup
+        }
+
+        // 3. Cleanup temp file
+        try { await unlink(tempPath); } catch {}
 
         return NextResponse.json({ 
             file: {
-                name: returnedFile.name, // The ID like 'files/8a9x8y'
+                name: returnedFile.name,
                 displayName: returnedFile.displayName,
                 mimeType: returnedFile.mimeType,
                 sizeBytes: returnedFile.sizeBytes,
                 uri: returnedFile.uri,
                 state: returnedFile.state,
-                createTime: returnedFile.createTime
-            } 
+                createTime: returnedFile.createTime,
+                expirationTime: (returnedFile as any).expirationTime || null,
+            },
+            storagePath
         });
 
     } catch (error: any) {

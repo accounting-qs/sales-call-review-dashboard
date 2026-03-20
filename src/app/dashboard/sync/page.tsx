@@ -99,6 +99,8 @@ const DEFAULT_TEMPLATE = `==📊 **New Audited Call** ==
 
 [Full Report]({{link}}) | [Recording]({{transcript}})`;
 
+type CallFilter = 'call1' | 'call2' | 'other' | 'all';
+
 export default function SyncPage() {
     const [transcripts, setTranscripts] = useState<FirefliesTranscript[]>([]);
     const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
@@ -111,6 +113,10 @@ export default function SyncPage() {
     const [isFullScreen, setIsFullScreen] = useState(false);
     const [transcriptSearch, setTranscriptSearch] = useState('');
     const [lastSyncedAt, setLastSyncedAt] = useState<string>('');
+    const [callFilter, setCallFilter] = useState<CallFilter>('call1');
+    const [evalKeywords, setEvalKeywords] = useState<string[]>([]);
+    const [followupKeywords, setFollowupKeywords] = useState<string[]>([]);
+    const [excludedKeywords, setExcludedKeywords] = useState<string[]>([]);
 
     const fetchFireflies = async () => {
         setSyncing(true);
@@ -152,8 +158,22 @@ export default function SyncPage() {
         try {
             const docRef = doc(db, 'settings', 'fireflies_pipeline');
             const docSnap = await getDoc(docRef);
-            if (docSnap.exists() && docSnap.data().lastSyncedAt) {
-                setLastSyncedAt(docSnap.data().lastSyncedAt);
+            if (docSnap.exists()) {
+                const s = docSnap.data();
+                if (s.lastSyncedAt) setLastSyncedAt(s.lastSyncedAt);
+                // Load keyword settings for classification
+                setEvalKeywords(
+                    (s.evaluationKeywords || 'Evaluation Call, Business Evaluation')
+                        .split(',').map((k: string) => k.trim().toLowerCase()).filter((k: string) => k)
+                );
+                setFollowupKeywords(
+                    (s.followupKeywords || 'Follow-up')
+                        .split(',').map((k: string) => k.trim().toLowerCase()).filter((k: string) => k)
+                );
+                setExcludedKeywords(
+                    (s.excludedKeywords || 'Test, Internal')
+                        .split(',').map((k: string) => k.trim().toLowerCase()).filter((k: string) => k)
+                );
             }
         } catch (error) {
             console.error("Error loading settings:", error);
@@ -217,7 +237,31 @@ export default function SyncPage() {
         );
     };
 
-    const filteredTranscripts = transcripts.filter(t => {
+    // Classify each transcript using the same keyword logic as the orchestrator
+    const classifyCall = (title: string): 'call1' | 'call2' | 'other' => {
+        const t = title.toLowerCase();
+        if (excludedKeywords.some(k => t.includes(k))) return 'other';
+        if (evalKeywords.some(k => t.includes(k))) return 'call1';
+        if (followupKeywords.some(k => t.includes(k))) return 'call2';
+        return 'other';
+    };
+
+    const classifiedTranscripts = transcripts.map(t => ({
+        ...t,
+        callCategory: classifyCall(t.title || ''),
+    }));
+
+    const counts = {
+        call1: classifiedTranscripts.filter(t => t.callCategory === 'call1').length,
+        call2: classifiedTranscripts.filter(t => t.callCategory === 'call2').length,
+        other: classifiedTranscripts.filter(t => t.callCategory === 'other').length,
+        all: classifiedTranscripts.length,
+    };
+
+    const filteredTranscripts = classifiedTranscripts.filter(t => {
+        // Apply call type filter
+        if (callFilter !== 'all' && t.callCategory !== callFilter) return false;
+        // Apply search filter
         const title = (t.title || '').toLowerCase();
         const email = (t.host_email || '').toLowerCase();
         const participants = (t.participants || []).join(',').toLowerCase();
@@ -292,14 +336,54 @@ export default function SyncPage() {
             />
 
             <div className="flex-1 overflow-y-auto px-8 py-8 pb-24">
-                <div className="mb-10">
+                <div className="mb-8">
                     <h1 className="text-3xl font-black text-slate-900 tracking-tight font-outfit uppercase">
                         Fireflies Pipeline
                     </h1>
                     <p className="text-slate-400 text-sm font-bold mt-2 uppercase tracking-[0.1em]">View all recordings and select calls for AI deep-dive analysis</p>
                 </div>
 
-                <div className="flex items-center gap-4 mb-8">
+                {/* Call Type Filter Tabs */}
+                <div className="flex items-center gap-2 mb-6">
+                    {[
+                        { key: 'call1' as CallFilter, label: 'Call 1 — Evaluation', icon: Brain, color: 'indigo' },
+                        { key: 'call2' as CallFilter, label: 'Call 2 — Follow-up', icon: RefreshCw, color: 'emerald' },
+                        { key: 'other' as CallFilter, label: 'Other', icon: FileText, color: 'slate' },
+                        { key: 'all' as CallFilter, label: 'All Calls', icon: Filter, color: 'purple' },
+                    ].map(tab => {
+                        const isActive = callFilter === tab.key;
+                        const count = counts[tab.key];
+                        const TabIcon = tab.icon;
+                        return (
+                            <button
+                                key={tab.key}
+                                onClick={() => setCallFilter(tab.key)}
+                                className={cn(
+                                    "relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all duration-200",
+                                    isActive
+                                        ? tab.color === 'indigo' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200"
+                                        : tab.color === 'emerald' ? "bg-emerald-600 text-white shadow-lg shadow-emerald-200"
+                                        : tab.color === 'purple' ? "bg-purple-600 text-white shadow-lg shadow-purple-200"
+                                        : "bg-slate-700 text-white shadow-lg shadow-slate-200"
+                                        : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                                )}
+                            >
+                                <TabIcon className="w-3.5 h-3.5" />
+                                {tab.label}
+                                <span className={cn(
+                                    "ml-1 px-2 py-0.5 rounded-full text-[10px] font-black",
+                                    isActive
+                                        ? "bg-white/20 text-white"
+                                        : "bg-slate-100 text-slate-500"
+                                )}>
+                                    {count}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                <div className="flex items-center gap-4 mb-6">
                     <div className="relative flex-1 max-w-md">
                         <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <Input
@@ -334,7 +418,16 @@ export default function SyncPage() {
                                         <TableCell>
                                             <div className="flex items-center gap-3">
                                                 <span className="text-sm font-bold text-slate-900 truncate max-w-[250px] uppercase tracking-tight">{t.title}</span>
-                                                <Badge variant="outline" className="text-[8px] font-black uppercase tracking-tighter bg-slate-50 border-slate-200">Recording</Badge>
+                                                <Badge variant="outline" className={cn(
+                                                    "text-[8px] font-black uppercase tracking-tighter",
+                                                    (t as any).callCategory === 'call1' ? "bg-indigo-50 text-indigo-600 border-indigo-200"
+                                                    : (t as any).callCategory === 'call2' ? "bg-emerald-50 text-emerald-600 border-emerald-200"
+                                                    : "bg-slate-50 text-slate-500 border-slate-200"
+                                                )}>
+                                                    {(t as any).callCategory === 'call1' ? 'Call 1'
+                                                     : (t as any).callCategory === 'call2' ? 'Call 2'
+                                                     : 'Other'}
+                                                </Badge>
                                             </div>
                                         </TableCell>
                                         <TableCell>

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { fetchTranscripts } from "@/lib/services/fireflies";
 
-export async function GET(request: Request) {
-    try {
-        const { searchParams } = new URL(request.url);
-        const limit = parseInt(searchParams.get("limit") || "50");
+export const maxDuration = 120; // Allow up to 2 minutes for large accounts
 
-        const transcripts = await fetchTranscripts(limit);
+export async function GET() {
+    try {
+        // Fetch ALL transcripts via pagination (no limit cap)
+        const transcripts = await fetchTranscripts(50); // 50 per page, paginated
         return NextResponse.json(transcripts);
     } catch (error: any) {
         console.error("API Error [Sync Fireflies]:", error);

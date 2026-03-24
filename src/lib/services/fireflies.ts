@@ -18,61 +18,78 @@ export interface FirefliesTranscript {
 
 const FIREFLIES_API_URL = 'https://api.fireflies.ai/graphql';
 
-export async function fetchTranscripts(limit = 10): Promise<FirefliesTranscript[]> {
+/**
+ * Fetch ALL transcripts from Fireflies using cursor-based pagination.
+ * The API returns up to `limit` per page; we keep fetching until we get
+ * fewer results than the page size, indicating we've reached the end.
+ */
+export async function fetchTranscripts(limit = 50): Promise<FirefliesTranscript[]> {
     const apiKey = process.env.FIREFLIES_API_KEY;
     if (!apiKey) throw new Error('FIREFLIES_API_KEY is not set');
 
-    console.log(`[Fireflies] Fetching ${limit} transcripts...`);
+    console.log(`[Fireflies] Fetching all transcripts (page size: ${limit})...`);
 
-    // Standard Fireflies query
-    const query = `
-        query {
-            transcripts(limit: ${limit}) {
-                id
-                title
-                date
-                duration
-                host_email
-                organizer_email
-                transcript_url
-                participants
+    const allTranscripts: FirefliesTranscript[] = [];
+    let skip = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+        const query = `
+            query {
+                transcripts(limit: ${limit}, skip: ${skip}) {
+                    id
+                    title
+                    date
+                    duration
+                    host_email
+                    organizer_email
+                    transcript_url
+                    participants
+                }
             }
+        `;
+
+        try {
+            const response = await fetch(FIREFLIES_API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify({ query }),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[Fireflies] HTTP Error ${response.status}:`, errorText);
+                throw new Error(`Fireflies HTTP Error: ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            if (result.errors) {
+                console.error("[Fireflies] GraphQL Errors:", JSON.stringify(result.errors, null, 2));
+                throw new Error(`Fireflies GraphQL error: ${result.errors[0].message}`);
+            }
+
+            const page = result.data?.transcripts || [];
+            allTranscripts.push(...page);
+
+            console.log(`[Fireflies] Page ${Math.floor(skip / limit) + 1}: fetched ${page.length} transcripts (total so far: ${allTranscripts.length})`);
+
+            if (page.length < limit) {
+                hasMore = false; // Last page
+            } else {
+                skip += limit;
+            }
+        } catch (err: any) {
+            console.error("[Fireflies] Fetch failed:", err.message);
+            throw err;
         }
-    `;
-
-    try {
-        const response = await fetch(FIREFLIES_API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({ query }),
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`[Fireflies] HTTP Error ${response.status}:`, errorText);
-            throw new Error(`Fireflies HTTP Error: ${response.status}`);
-        }
-
-        const result = await response.json();
-
-        if (result.errors) {
-            console.error("[Fireflies] GraphQL Errors:", JSON.stringify(result.errors, null, 2));
-            throw new Error(`Fireflies GraphQL error: ${result.errors[0].message}`);
-        }
-
-        if (!result.data || !result.data.transcripts) {
-            console.warn("[Fireflies] No transcripts found in response data.");
-            return [];
-        }
-
-        return result.data.transcripts;
-    } catch (err: any) {
-        console.error("[Fireflies] Fetch failed:", err.message);
-        throw err;
     }
+
+    console.log(`[Fireflies] ✅ Total transcripts fetched: ${allTranscripts.length}`);
+    return allTranscripts;
 }
 
 export async function getTranscriptDetails(transcriptId: string): Promise<FirefliesTranscript> {
@@ -89,6 +106,7 @@ export async function getTranscriptDetails(transcriptId: string): Promise<Firefl
                 host_email
                 organizer_email
                 transcript_url
+                participants
                 sentences {
                     index
                     speaker_name

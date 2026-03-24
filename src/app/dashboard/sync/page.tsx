@@ -135,20 +135,26 @@ export default function SyncPage() {
     const fetchFireflies = async () => {
         setSyncing(true);
         try {
-            const res = await fetch('/api/sync/fireflies?limit=50');
+            const res = await fetch('/api/sync/fireflies');
             const data = await res.json();
             if (Array.isArray(data)) {
                 setTranscripts(data);
 
                 // Check which ones are already processed in Firestore
+                // Firestore 'in' queries support max 30 items, so batch them
                 const callsRef = collection(db, 'calls');
-                const tIds = data.slice(0, 30).map(t => t.id);
-                if (tIds.length > 0) {
-                    const q = query(callsRef, where('firefliesId', 'in', tIds));
-                    const snapshot = await getDocs(q);
-                    const ids = new Set(snapshot.docs.map(doc => doc.data().firefliesId));
-                    setProcessedIds(ids);
+                const allIds = data.map((t: any) => t.id);
+                const processedSet = new Set<string>();
+
+                for (let i = 0; i < allIds.length; i += 30) {
+                    const batch = allIds.slice(i, i + 30);
+                    if (batch.length > 0) {
+                        const q = query(callsRef, where('firefliesId', 'in', batch));
+                        const snapshot = await getDocs(q);
+                        snapshot.docs.forEach(d => processedSet.add(d.data().firefliesId));
+                    }
                 }
+                setProcessedIds(processedSet);
 
                 // Update settings with the current timestamp
                 const now = new Date().toISOString();
@@ -603,9 +609,17 @@ export default function SyncPage() {
                                             </div>
                                         </TableCell>
                                         <TableCell>
-                                            <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
-                                                <Clock className="w-3 h-3" />
-                                                {formatDuration(t.duration)}
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                                                    <Clock className="w-3 h-3" />
+                                                    {formatDuration(t.duration)}
+                                                </div>
+                                                {(t.duration <= 30) && (
+                                                    <Badge variant="outline" className="bg-amber-50 text-amber-600 border-amber-200 text-[8px] font-black uppercase tracking-tight gap-1 py-0.5 px-2">
+                                                        <AlertCircle className="w-2.5 h-2.5" />
+                                                        No Words
+                                                    </Badge>
+                                                )}
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-right pr-8" onClick={(e) => e.stopPropagation()}>
@@ -786,9 +800,9 @@ export default function SyncPage() {
                                             </div>
                                             <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Accessing Transcripts...</p>
                                         </div>
-                                    ) : (
+                                    ) : selectedTranscript?.sentences && selectedTranscript.sentences.length > 0 ? (
                                         <div className="space-y-10 pb-24 max-w-4xl mx-auto">
-                                            {selectedTranscript?.sentences?.filter(s =>
+                                            {selectedTranscript.sentences.filter(s =>
                                                 !transcriptSearch || s.text.toLowerCase().includes(transcriptSearch.toLowerCase()) || (s.speaker_name || '').toLowerCase().includes(transcriptSearch.toLowerCase())
                                             ).map((s, i) => (
                                                 <div key={i} className="group relative">
@@ -815,6 +829,23 @@ export default function SyncPage() {
                                                     </div>
                                                 </div>
                                             ))}
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center py-32 space-y-5">
+                                            <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center">
+                                                <AlertCircle className="w-8 h-8 text-amber-500" />
+                                            </div>
+                                            <div className="text-center space-y-2">
+                                                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">No Words Detected</h3>
+                                                <p className="text-xs text-slate-400 font-medium max-w-sm">
+                                                    This call recording appears to have no spoken content. This can happen when a meeting starts but no one speaks,
+                                                    or the recording failed to capture audio.
+                                                </p>
+                                            </div>
+                                            <Badge className="bg-amber-50 text-amber-600 border-amber-200 text-[9px] font-black uppercase tracking-widest px-4 py-1.5 gap-1.5">
+                                                <Clock className="w-3 h-3" />
+                                                Duration: {selectedTranscript && formatDuration(selectedTranscript.duration)}
+                                            </Badge>
                                         </div>
                                     )}
                                 </div>

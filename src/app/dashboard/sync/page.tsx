@@ -66,11 +66,12 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc, getDoc, Timestamp, orderBy } from 'firebase/firestore';
 import { useReps } from '@/lib/hooks/useReps';
 
-interface FirefliesTranscript {
+interface SyncedTranscript {
     id: string;
+    firefliesId: string;
     title: string | null;
     date: number;
     duration: number;
@@ -78,6 +79,11 @@ interface FirefliesTranscript {
     organizer_email: string | null;
     transcript_url: string;
     participants?: string[];
+    callCategory: 'call1' | 'call2' | 'other';
+    isAnalyzed: boolean;
+    hasTranscript: boolean;
+    syncedAt: string;
+    // These come from the detail view, not the list
     sentences?: Array<{
         index: number;
         speaker_name: string;
@@ -108,23 +114,20 @@ const DEFAULT_TEMPLATE = `==📊 **New Audited Call** ==
 type CallFilter = 'call1' | 'call2' | 'other' | 'all';
 
 export default function SyncPage() {
-    const [transcripts, setTranscripts] = useState<FirefliesTranscript[]>([]);
-    const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
+    const [transcripts, setTranscripts] = useState<SyncedTranscript[]>([]);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const [search, setSearch] = useState('');
     const [analyzingId, setAnalyzingId] = useState<string | null>(null);
-    const [selectedTranscript, setSelectedTranscript] = useState<FirefliesTranscript | null>(null);
+    const [selectedTranscript, setSelectedTranscript] = useState<SyncedTranscript | null>(null);
     const [loadingDetails, setLoadingDetails] = useState(false);
     const [isFullScreen, setIsFullScreen] = useState(false);
     const [transcriptSearch, setTranscriptSearch] = useState('');
     const [lastSyncedAt, setLastSyncedAt] = useState<string>('');
     const [callFilter, setCallFilter] = useState<CallFilter>('call1');
-    const [evalKeywords, setEvalKeywords] = useState<string[]>([]);
-    const [followupKeywords, setFollowupKeywords] = useState<string[]>([]);
-    const [excludedKeywords, setExcludedKeywords] = useState<string[]>([]);
     const [showPeoplePanel, setShowPeoplePanel] = useState(false);
     const [addingRepEmail, setAddingRepEmail] = useState<string | null>(null);
+    const [syncStats, setSyncStats] = useState<{ total: number; newCalls: number } | null>(null);
 
     const { reps: existingReps } = useReps();
     const existingRepEmails = useMemo(
@@ -132,45 +135,75 @@ export default function SyncPage() {
         [existingReps]
     );
 
+    // Load saved calls from Firestore on page load (instant, no API call)
+    const loadSavedCalls = async () => {
+        try {
+            const snapshot = await getDocs(
+                query(collection(db, 'synced_calls'), orderBy('date', 'desc'))
+            );
+            const calls = snapshot.docs.map(d => {
+                const data = d.data();
+                return {
+                    id: d.id,
+                    firefliesId: d.id,
+                    title: data.title || null,
+                    date: data.date,
+                    duration: data.duration,
+                    host_email: data.hostEmail || null,
+                    organizer_email: data.organizerEmail || null,
+                    transcript_url: data.transcriptUrl || '',
+                    participants: data.participants || [],
+                    callCategory: data.callCategory || 'other',
+                    isAnalyzed: data.isAnalyzed || false,
+                    hasTranscript: data.hasTranscript !== false,
+                    syncedAt: data.syncedAt || '',
+                } as SyncedTranscript;
+            });
+            setTranscripts(calls);
+        } catch (err) {
+            console.error('Error loading saved calls:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Sync from Fireflies API and persist to Firestore
     const fetchFireflies = async () => {
         setSyncing(true);
+        setSyncStats(null);
         try {
             const res = await fetch('/api/sync/fireflies');
             const data = await res.json();
-            if (Array.isArray(data)) {
-                setTranscripts(data);
-
-                // Check which ones are already processed in Firestore
-                // Firestore 'in' queries support max 30 items, so batch them
-                const callsRef = collection(db, 'calls');
-                const allIds = data.map((t: any) => t.id);
-                const processedSet = new Set<string>();
-
-                for (let i = 0; i < allIds.length; i += 30) {
-                    const batch = allIds.slice(i, i + 30);
-                    if (batch.length > 0) {
-                        const q = query(callsRef, where('firefliesId', 'in', batch));
-                        const snapshot = await getDocs(q);
-                        snapshot.docs.forEach(d => processedSet.add(d.data().firefliesId));
-                    }
-                }
-                setProcessedIds(processedSet);
-
-                // Update settings with the current timestamp
-                const now = new Date().toISOString();
-                setLastSyncedAt(now);
-                await setDoc(doc(db, 'settings', 'fireflies_pipeline'), { lastSyncedAt: now }, { merge: true });
+            if (data.success && Array.isArray(data.calls)) {
+                // Map API response to our UI format
+                const synced = data.calls.map((c: any) => ({
+                    id: c.firefliesId,
+                    firefliesId: c.firefliesId,
+                    title: c.title,
+                    date: c.date,
+                    duration: c.duration,
+                    host_email: c.hostEmail,
+                    organizer_email: c.organizerEmail,
+                    transcript_url: c.transcriptUrl,
+                    participants: c.participants || [],
+                    callCategory: c.callCategory,
+                    isAnalyzed: c.isAnalyzed,
+                    hasTranscript: c.hasTranscript,
+                    syncedAt: c.syncedAt,
+                } as SyncedTranscript));
+                setTranscripts(synced);
+                setSyncStats({ total: data.total, newCalls: data.newCalls });
+                setLastSyncedAt(new Date().toISOString());
             }
         } catch (error) {
             console.error("Sync error:", error);
         } finally {
             setSyncing(false);
-            setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchFireflies();
+        loadSavedCalls();
         loadSettings();
     }, []);
 
@@ -181,19 +214,6 @@ export default function SyncPage() {
             if (docSnap.exists()) {
                 const s = docSnap.data();
                 if (s.lastSyncedAt) setLastSyncedAt(s.lastSyncedAt);
-                // Load keyword settings for classification
-                setEvalKeywords(
-                    (s.evaluationKeywords || 'Evaluation Call, Business Evaluation')
-                        .split(',').map((k: string) => k.trim().toLowerCase()).filter((k: string) => k)
-                );
-                setFollowupKeywords(
-                    (s.followupKeywords || 'Follow-up')
-                        .split(',').map((k: string) => k.trim().toLowerCase()).filter((k: string) => k)
-                );
-                setExcludedKeywords(
-                    (s.excludedKeywords || 'Test, Internal')
-                        .split(',').map((k: string) => k.trim().toLowerCase()).filter((k: string) => k)
-                );
             }
         } catch (error) {
             console.error("Error loading settings:", error);
@@ -210,7 +230,7 @@ export default function SyncPage() {
             });
 
             if (res.ok) {
-                setProcessedIds(prev => new Set([...Array.from(prev), firefliesId]));
+                setTranscripts(prev => prev.map(t => t.id === firefliesId ? { ...t, isAnalyzed: true } : t));
                 alert(`Analysis started for ${callType.toUpperCase()}! It will appear in the dashboard shortly.`);
             } else {
                 const err = await res.json();
@@ -223,7 +243,7 @@ export default function SyncPage() {
         }
     };
 
-    const handleViewDetails = async (transcript: FirefliesTranscript) => {
+    const handleViewDetails = async (transcript: SyncedTranscript) => {
         setSelectedTranscript(transcript);
         setLoadingDetails(true);
         setTranscriptSearch('');
@@ -257,28 +277,15 @@ export default function SyncPage() {
         );
     };
 
-    // Classify each transcript using the same keyword logic as the orchestrator
-    const classifyCall = (title: string): 'call1' | 'call2' | 'other' => {
-        const t = title.toLowerCase();
-        if (excludedKeywords.some(k => t.includes(k))) return 'other';
-        if (evalKeywords.some(k => t.includes(k))) return 'call1';
-        if (followupKeywords.some(k => t.includes(k))) return 'call2';
-        return 'other';
-    };
-
-    const classifiedTranscripts = transcripts.map(t => ({
-        ...t,
-        callCategory: classifyCall(t.title || ''),
-    }));
-
+    // Classification now comes from Firestore — no client-side classifyCall needed
     const counts = {
-        call1: classifiedTranscripts.filter(t => t.callCategory === 'call1').length,
-        call2: classifiedTranscripts.filter(t => t.callCategory === 'call2').length,
-        other: classifiedTranscripts.filter(t => t.callCategory === 'other').length,
-        all: classifiedTranscripts.length,
+        call1: transcripts.filter(t => t.callCategory === 'call1').length,
+        call2: transcripts.filter(t => t.callCategory === 'call2').length,
+        other: transcripts.filter(t => t.callCategory === 'other').length,
+        all: transcripts.length,
     };
 
-    const filteredTranscripts = classifiedTranscripts.filter(t => {
+    const filteredTranscripts = transcripts.filter(t => {
         // Apply call type filter
         if (callFilter !== 'all' && t.callCategory !== callFilter) return false;
         // Apply search filter
@@ -624,7 +631,7 @@ export default function SyncPage() {
                                         </TableCell>
                                         <TableCell className="text-right pr-8" onClick={(e) => e.stopPropagation()}>
                                             <div className="flex items-center justify-end gap-2">
-                                                {processedIds.has(t.id) ? (
+                                                {t.isAnalyzed ? (
                                                     <Badge variant="secondary" className="bg-green-50 text-green-700 border-none px-3 py-1 gap-1.5 font-bold text-[10px] uppercase tracking-tight">
                                                         <CheckCircle2 className="w-3 h-3" /> Analyzed
                                                     </Badge>

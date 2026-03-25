@@ -1,8 +1,6 @@
 import { fetchTranscripts } from "./fireflies";
 import { db } from "../firebase";
-import {
-    collection, doc, getDoc, getDocs, setDoc, query, where, writeBatch
-} from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 
 export interface SyncedCall {
     firefliesId: string;
@@ -39,6 +37,11 @@ export async function syncAndPersistCalls(): Promise<SyncResult> {
     const transcripts = await fetchTranscripts(50);
     console.log(`[SyncCalls] Fetched ${transcripts.length} transcripts from Fireflies`);
 
+    if (transcripts.length === 0) {
+        console.log("[SyncCalls] No transcripts found.");
+        return { total: 0, newCalls: 0, updated: 0, calls: [] };
+    }
+
     // 2. Load keyword settings for classification
     const settingsSnap = await getDoc(doc(db, 'settings', 'fireflies_pipeline'));
     const settings = settingsSnap.exists() ? settingsSnap.data() : {};
@@ -52,24 +55,27 @@ export async function syncAndPersistCalls(): Promise<SyncResult> {
 
     // 3. Check which calls are already analyzed (in `calls` collection)
     const analyzedIds = new Set<string>();
-    const callsSnapshot = await getDocs(collection(db, 'calls'));
-    callsSnapshot.docs.forEach(d => analyzedIds.add(d.id));
+    try {
+        const callsSnapshot = await getDocs(collection(db, 'calls'));
+        callsSnapshot.docs.forEach(d => analyzedIds.add(d.id));
+    } catch (e) {
+        console.warn("[SyncCalls] Could not fetch calls collection:", e);
+    }
 
-    // 4. Check which calls already exist in synced_calls (for counting new vs updated)
+    // 4. Check which calls already exist in synced_calls
     const existingIds = new Set<string>();
-    const syncedSnapshot = await getDocs(collection(db, 'synced_calls'));
-    syncedSnapshot.docs.forEach(d => existingIds.add(d.id));
+    try {
+        const syncedSnapshot = await getDocs(collection(db, 'synced_calls'));
+        syncedSnapshot.docs.forEach(d => existingIds.add(d.id));
+    } catch (e) {
+        console.warn("[SyncCalls] synced_calls collection is empty or new:", e);
+    }
 
-    // 5. Classify and upsert each transcript
+    // 5. Classify and save each transcript using setDoc with merge
     const now = new Date().toISOString();
     let newCalls = 0;
     let updated = 0;
     const allCalls: SyncedCall[] = [];
-
-    // Use batched writes for efficiency (Firestore supports up to 500 per batch)
-    const BATCH_SIZE = 450;
-    let batch = writeBatch(db);
-    let batchCount = 0;
 
     for (const t of transcripts) {
         const title = (t.title || '').toLowerCase();
@@ -84,6 +90,8 @@ export async function syncAndPersistCalls(): Promise<SyncResult> {
             callCategory = 'call2';
         }
 
+        const isNew = !existingIds.has(t.id);
+
         const syncedCall: SyncedCall = {
             firefliesId: t.id,
             title: t.title || 'Untitled',
@@ -94,38 +102,27 @@ export async function syncAndPersistCalls(): Promise<SyncResult> {
             transcriptUrl: t.transcript_url || '',
             participants: t.participants || [],
             callCategory,
-            syncedAt: existingIds.has(t.id) ? '' : now, // Keep original syncedAt for existing
+            syncedAt: isNew ? now : '', // Will be preserved via merge for existing docs
             isAnalyzed: analyzedIds.has(t.id),
             hasTranscript: t.duration > 30,
         };
 
-        const docRef = doc(db, 'synced_calls', t.id);
-
-        if (existingIds.has(t.id)) {
-            // Update — preserve syncedAt, update everything else
-            const { syncedAt, ...updateData } = syncedCall;
-            batch.update(docRef, updateData);
-            updated++;
-        } else {
-            // New call — set syncedAt
-            syncedCall.syncedAt = now;
-            batch.set(docRef, syncedCall);
-            newCalls++;
+        try {
+            if (isNew) {
+                // New doc — set everything including syncedAt
+                await setDoc(doc(db, 'synced_calls', t.id), syncedCall);
+                newCalls++;
+            } else {
+                // Existing doc — merge without overwriting syncedAt
+                const { syncedAt, ...updateData } = syncedCall;
+                await setDoc(doc(db, 'synced_calls', t.id), updateData, { merge: true });
+                updated++;
+            }
+        } catch (e) {
+            console.error(`[SyncCalls] Failed to save call ${t.id}:`, e);
         }
 
         allCalls.push(syncedCall);
-        batchCount++;
-
-        if (batchCount >= BATCH_SIZE) {
-            await batch.commit();
-            batch = writeBatch(db);
-            batchCount = 0;
-        }
-    }
-
-    // Commit remaining writes
-    if (batchCount > 0) {
-        await batch.commit();
     }
 
     // 6. Update lastSyncedAt

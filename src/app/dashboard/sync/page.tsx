@@ -66,7 +66,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, setDoc, getDoc, Timestamp, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { useReps } from '@/lib/hooks/useReps';
 
 interface SyncedTranscript {
@@ -138,9 +138,7 @@ export default function SyncPage() {
     // Load saved calls from Firestore on page load (instant, no API call)
     const loadSavedCalls = async () => {
         try {
-            const snapshot = await getDocs(
-                query(collection(db, 'synced_calls'), orderBy('date', 'desc'))
-            );
+            const snapshot = await getDocs(collection(db, 'synced_calls'));
             const calls = snapshot.docs.map(d => {
                 const data = d.data();
                 return {
@@ -159,6 +157,8 @@ export default function SyncPage() {
                     syncedAt: data.syncedAt || '',
                 } as SyncedTranscript;
             });
+            // Sort by date descending (newest first)
+            calls.sort((a, b) => b.date - a.date);
             setTranscripts(calls);
         } catch (err) {
             console.error('Error loading saved calls:', err);
@@ -174,6 +174,11 @@ export default function SyncPage() {
         try {
             const res = await fetch('/api/sync/fireflies');
             const data = await res.json();
+            if (data.error) {
+                console.error('Sync API error:', data.error);
+                alert(`Sync failed: ${data.error}`);
+                return;
+            }
             if (data.success && Array.isArray(data.calls)) {
                 // Map API response to our UI format
                 const synced = data.calls.map((c: any) => ({
@@ -191,12 +196,15 @@ export default function SyncPage() {
                     hasTranscript: c.hasTranscript,
                     syncedAt: c.syncedAt,
                 } as SyncedTranscript));
+                // Sort by date descending
+                synced.sort((a: SyncedTranscript, b: SyncedTranscript) => b.date - a.date);
                 setTranscripts(synced);
                 setSyncStats({ total: data.total, newCalls: data.newCalls });
                 setLastSyncedAt(new Date().toISOString());
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Sync error:", error);
+            alert(`Sync failed: ${error.message || 'Network error'}`);
         } finally {
             setSyncing(false);
         }

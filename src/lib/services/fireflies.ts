@@ -19,9 +19,8 @@ export interface FirefliesTranscript {
 const FIREFLIES_API_URL = 'https://api.fireflies.ai/graphql';
 
 /**
- * Fetch ALL transcripts from Fireflies using cursor-based pagination.
- * The API returns up to `limit` per page; we keep fetching until we get
- * fewer results than the page size, indicating we've reached the end.
+ * Fetch ALL transcripts from Fireflies using proper GraphQL variables
+ * for pagination (limit + skip).
  */
 export async function fetchTranscripts(limit = 50): Promise<FirefliesTranscript[]> {
     const apiKey = process.env.FIREFLIES_API_KEY;
@@ -33,22 +32,23 @@ export async function fetchTranscripts(limit = 50): Promise<FirefliesTranscript[
     let skip = 0;
     let hasMore = true;
 
-    while (hasMore) {
-        const query = `
-            query {
-                transcripts(limit: ${limit}, skip: ${skip}) {
-                    id
-                    title
-                    date
-                    duration
-                    host_email
-                    organizer_email
-                    transcript_url
-                    participants
-                }
+    // Use proper GraphQL variable syntax as per Fireflies API docs
+    const queryString = `
+        query Transcripts($limit: Int, $skip: Int) {
+            transcripts(limit: $limit, skip: $skip) {
+                id
+                title
+                date
+                duration
+                host_email
+                organizer_email
+                transcript_url
+                participants
             }
-        `;
+        }
+    `;
 
+    while (hasMore) {
         try {
             const response = await fetch(FIREFLIES_API_URL, {
                 method: 'POST',
@@ -56,7 +56,10 @@ export async function fetchTranscripts(limit = 50): Promise<FirefliesTranscript[
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`,
                 },
-                body: JSON.stringify({ query }),
+                body: JSON.stringify({
+                    query: queryString,
+                    variables: { limit, skip }
+                }),
             });
 
             if (!response.ok) {
@@ -75,7 +78,7 @@ export async function fetchTranscripts(limit = 50): Promise<FirefliesTranscript[
             const page = result.data?.transcripts || [];
             allTranscripts.push(...page);
 
-            console.log(`[Fireflies] Page ${Math.floor(skip / limit) + 1}: fetched ${page.length} transcripts (total so far: ${allTranscripts.length})`);
+            console.log(`[Fireflies] Page ${Math.floor(skip / limit) + 1}: fetched ${page.length} (total: ${allTranscripts.length})`);
 
             if (page.length < limit) {
                 hasMore = false; // Last page
@@ -97,8 +100,8 @@ export async function getTranscriptDetails(transcriptId: string): Promise<Firefl
     if (!apiKey) throw new Error('FIREFLIES_API_KEY is not set');
 
     const query = `
-        query {
-            transcript(id: "${transcriptId}") {
+        query Transcript($transcriptId: String!) {
+            transcript(id: $transcriptId) {
                 id
                 title
                 date
@@ -124,7 +127,10 @@ export async function getTranscriptDetails(transcriptId: string): Promise<Firefl
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({
+            query,
+            variables: { transcriptId }
+        }),
     });
 
     const result = await response.json();

@@ -97,29 +97,53 @@ export async function analyzeSalesCall(
     // Direct API call to support file_search tool
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${GEMINI_API_KEY}`;
 
-    const body = {
-        contents: [
-            { 
-                role: "user", 
-                parts: [
-                    ...selectedFileParts, // Inject ONLY the docs enabled for this call type
-                    { text: systemPrompt + "\n\n" + userPromptContent }
-                ] 
-            }
-        ]
-    };
-
     console.log(`[Gemini] Starting ${callTypeLabel} analysis for "${metadata.title}" using ${selectedModel}...`);
     console.log(`[Gemini] Call type: ${callType} → Filtered by field: ${callField}`);
     console.log(`[Gemini] Injected ${selectedFileParts.length} documents: ${selectedDocNames.join(', ') || '(none)'}`);
 
-    const response = await fetch(url, {
+    // First attempt: with RAG file attachments
+    const bodyWithDocs = {
+        contents: [{
+            role: "user",
+            parts: [
+                ...selectedFileParts,
+                { text: systemPrompt + "\n\n" + userPromptContent }
+            ]
+        }]
+    };
+
+    let response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(bodyWithDocs)
     });
 
-    const result = await response.json();
+    let result = await response.json();
+
+    // If RAG files are expired, retry WITHOUT file attachments
+    if (result.error && selectedFileParts.length > 0 &&
+        (result.error.message?.includes('permission') || result.error.message?.includes('not exist'))) {
+        console.warn(`[Gemini] ⚠️ RAG files expired or inaccessible. Retrying without file attachments...`);
+        console.warn(`[Gemini] Original error: ${result.error.message}`);
+
+        const bodyWithoutDocs = {
+            contents: [{
+                role: "user",
+                parts: [
+                    { text: systemPrompt + "\n\n" + userPromptContent }
+                ]
+            }]
+        };
+
+        response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyWithoutDocs)
+        });
+
+        result = await response.json();
+    }
+
     if (result.error) {
         throw new Error(`Gemini API error: ${result.error.message}`);
     }

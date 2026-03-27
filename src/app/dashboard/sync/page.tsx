@@ -167,41 +167,122 @@ export default function SyncPage() {
         }
     };
 
-    // Sync from Fireflies API and persist to Firestore
+    // Sync from Fireflies API, classify client-side, and persist to Firestore
     const fetchFireflies = async () => {
         setSyncing(true);
         setSyncStats(null);
         try {
+            // 1. Fetch raw transcripts from API (fast — no Firestore work server-side)
             const res = await fetch('/api/sync/fireflies');
-            const data = await res.json();
+            const text = await res.text();
+            
+            let data: any;
+            try {
+                data = JSON.parse(text);
+            } catch {
+                console.error('Invalid JSON response:', text.substring(0, 200));
+                alert('Sync failed: Server returned an invalid response. Please try again.');
+                return;
+            }
+
             if (data.error) {
-                console.error('Sync API error:', data.error);
                 alert(`Sync failed: ${data.error}`);
                 return;
             }
-            if (data.success && Array.isArray(data.calls)) {
-                // Map API response to our UI format
-                const synced = data.calls.map((c: any) => ({
-                    id: c.firefliesId,
-                    firefliesId: c.firefliesId,
-                    title: c.title,
-                    date: c.date,
-                    duration: c.duration,
-                    host_email: c.hostEmail,
-                    organizer_email: c.organizerEmail,
-                    transcript_url: c.transcriptUrl,
-                    participants: c.participants || [],
-                    callCategory: c.callCategory,
-                    isAnalyzed: c.isAnalyzed,
-                    hasTranscript: c.hasTranscript,
-                    syncedAt: c.syncedAt,
-                } as SyncedTranscript));
-                // Sort by date descending
-                synced.sort((a: SyncedTranscript, b: SyncedTranscript) => b.date - a.date);
-                setTranscripts(synced);
-                setSyncStats({ total: data.total, newCalls: data.newCalls });
-                setLastSyncedAt(new Date().toISOString());
+
+            if (!Array.isArray(data)) {
+                alert('Sync failed: Unexpected response format');
+                return;
             }
+
+            // 2. Load keyword settings for classification
+            const settingsSnap = await getDoc(doc(db, 'settings', 'fireflies_pipeline'));
+            const settings = settingsSnap.exists() ? settingsSnap.data() : {};
+
+            const evalKw = (settings.evaluationKeywords || 'Evaluation Call, Business Evaluation')
+                .split(',').map((k: string) => k.trim().toLowerCase()).filter((k: string) => k);
+            const followKw = (settings.followupKeywords || 'Follow-up')
+                .split(',').map((k: string) => k.trim().toLowerCase()).filter((k: string) => k);
+            const excludeKw = (settings.excludedKeywords || 'Test, Internal')
+                .split(',').map((k: string) => k.trim().toLowerCase()).filter((k: string) => k);
+
+            // 3. Check which calls are already analyzed
+            const analyzedIds = new Set<string>();
+            const callsRef = collection(db, 'calls');
+            const allIds = data.map((t: any) => t.id);
+            for (let i = 0; i < allIds.length; i += 30) {
+                const batch = allIds.slice(i, i + 30);
+                if (batch.length > 0) {
+                    const q = query(callsRef, where('firefliesId', 'in', batch));
+                    const snap = await getDocs(q);
+                    snap.docs.forEach(d => analyzedIds.add(d.data().firefliesId));
+                }
+            }
+
+            // 4. Classify and save each transcript to Firestore
+            const now = new Date().toISOString();
+            let newCalls = 0;
+            const synced: SyncedTranscript[] = [];
+
+            for (const t of data) {
+                const title = (t.title || '').toLowerCase();
+                let callCategory: 'call1' | 'call2' | 'other' = 'other';
+                if (excludeKw.some((k: string) => title.includes(k))) {
+                    callCategory = 'other';
+                } else if (evalKw.some((k: string) => title.includes(k))) {
+                    callCategory = 'call1';
+                } else if (followKw.some((k: string) => title.includes(k))) {
+                    callCategory = 'call2';
+                }
+
+                const syncedCall = {
+                    firefliesId: t.id,
+                    title: t.title || 'Untitled',
+                    date: t.date,
+                    duration: t.duration,
+                    hostEmail: t.host_email || '',
+                    organizerEmail: t.organizer_email || '',
+                    transcriptUrl: t.transcript_url || '',
+                    participants: t.participants || [],
+                    callCategory,
+                    syncedAt: now,
+                    isAnalyzed: analyzedIds.has(t.id),
+                    hasTranscript: t.duration > 30,
+                };
+
+                // Upsert to Firestore (merge to preserve existing syncedAt)
+                try {
+                    await setDoc(doc(db, 'synced_calls', t.id), syncedCall, { merge: true });
+                    newCalls++;
+                } catch (e) {
+                    console.warn(`Failed to save call ${t.id}:`, e);
+                }
+
+                synced.push({
+                    id: t.id,
+                    firefliesId: t.id,
+                    title: t.title,
+                    date: t.date,
+                    duration: t.duration,
+                    host_email: t.host_email,
+                    organizer_email: t.organizer_email,
+                    transcript_url: t.transcript_url || '',
+                    participants: t.participants || [],
+                    callCategory,
+                    isAnalyzed: analyzedIds.has(t.id),
+                    hasTranscript: t.duration > 30,
+                    syncedAt: now,
+                } as SyncedTranscript);
+            }
+
+            synced.sort((a, b) => b.date - a.date);
+            setTranscripts(synced);
+            setSyncStats({ total: synced.length, newCalls });
+            setLastSyncedAt(now);
+
+            // Update lastSyncedAt
+            await setDoc(doc(db, 'settings', 'fireflies_pipeline'), { lastSyncedAt: now }, { merge: true });
+
         } catch (error: any) {
             console.error("Sync error:", error);
             alert(`Sync failed: ${error.message || 'Network error'}`);

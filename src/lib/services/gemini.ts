@@ -1,10 +1,81 @@
 import { Call, CallType, Analysis } from "@/types";
 import { db } from "../firebase";
-import { collection, query, where, getDocs, Timestamp, getDoc, doc } from "firebase/firestore";
+import { collection, query, where, getDocs, Timestamp, getDoc, doc, updateDoc } from "firebase/firestore";
 import { getPromptSettings } from "./promptSettings";
+import { GoogleAIFileManager } from "@google/generative-ai/server";
+import { writeFile, unlink } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-pro";
+
+/**
+ * Auto-refresh a single RAG document if its Gemini file is expired.
+ * Uses GoogleAIFileManager directly (server-side).
+ * Returns the (possibly refreshed) fileUri, or null if renewal fails.
+ */
+async function ensureFreshGeminiUri(kbDocId: string, data: any): Promise<string | null> {
+    const expires = data.expiresAt;
+    const isExpired = !expires || new Date(expires).getTime() < Date.now();
+    
+    // If not expired, return current URI
+    if (!isExpired && data.geminiFileUri) {
+        return data.geminiFileUri;
+    }
+
+    // Expired — try to renew from base64 backup
+    if (!data.fileBase64) {
+        console.warn(`[Gemini] ⚠️ "${data.name}" is expired and has NO backup. Skipping.`);
+        return null;
+    }
+
+    if (!GEMINI_API_KEY) return null;
+
+    console.log(`[Gemini] 🔄 Auto-renewing expired RAG file "${data.name}"...`);
+
+    try {
+        const fileManager = new GoogleAIFileManager(GEMINI_API_KEY);
+        const fileName = data.name || 'document.pdf';
+        const mimeType = data.mimeType || 'application/pdf';
+        
+        // Write base64 to temp file
+        const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const tempPath = join(tmpdir(), `auto-renew-${Date.now()}-${safeName}`);
+        const buffer = Buffer.from(data.fileBase64, 'base64');
+        await writeFile(tempPath, buffer);
+
+        // Delete old file from Gemini (ignore errors — may already be gone)
+        if (data.geminiFileId) {
+            try { await fileManager.deleteFile(data.geminiFileId); } catch {}
+        }
+
+        // Upload fresh copy
+        const uploadResult = await fileManager.uploadFile(tempPath, {
+            mimeType,
+            displayName: fileName,
+        });
+        const newFile = uploadResult.file;
+
+        // Update Firestore with fresh references
+        await updateDoc(doc(db, 'knowledge_base', kbDocId), {
+            geminiFileId: newFile.name,
+            geminiFileUri: newFile.uri,
+            status: newFile.state === 'PROCESSING' ? 'Indexing...' : 'Active',
+            expiresAt: (newFile as any).expirationTime || null,
+            lastRenewedAt: new Date().toISOString(),
+        });
+
+        // Cleanup temp
+        try { await unlink(tempPath); } catch {}
+
+        console.log(`[Gemini] ✅ Renewed "${fileName}" → ${newFile.uri}`);
+        return newFile.uri;
+    } catch (err: any) {
+        console.error(`[Gemini] ❌ Renewal error for "${data.name}":`, err.message);
+        return null;
+    }
+}
 
 export async function analyzeSalesCall(
     transcript: string,
@@ -25,7 +96,6 @@ export async function analyzeSalesCall(
     }
 
     // 1. Fetch relevant reference docs filtered by call type
-    // Use the call-type-specific field: useInCall1 for evaluation, useInCall2 for followup
     const callField = callType === 'evaluation' ? 'useInCall1' : 'useInCall2';
     const q = query(collection(db, 'knowledge_base'), where(callField, '==', true));
     const docsSnapshot = await getDocs(q);
@@ -37,30 +107,36 @@ export async function analyzeSalesCall(
     const legacySnapshot = await getDocs(legacyQ);
     const seenIds = new Set<string>();
     
-    // Helper to add a doc if it has valid file data
-    const addDoc = (d: any) => {
+    // Helper to add a doc — auto-refreshes expired Gemini URIs from backup
+    const addDoc = async (d: any) => {
         if (seenIds.has(d.id)) return;
         const data = d.data();
-        if (data.geminiFileUri && data.mimeType) {
-            seenIds.add(d.id);
+        if (!data.mimeType) return;
+
+        seenIds.add(d.id);
+        const freshUri = await ensureFreshGeminiUri(d.id, data);
+        
+        if (freshUri) {
             selectedDocNames.push(data.name);
             selectedFileParts.push({
                 fileData: {
                     mimeType: data.mimeType,
-                    fileUri: data.geminiFileUri
+                    fileUri: freshUri
                 }
             });
         }
     };
 
-    docsSnapshot.docs.forEach(addDoc);
-    // Include legacy docs that don't have the new fields yet
-    legacySnapshot.docs.forEach(d => {
+    // Process docs (await each for sequential refresh to avoid rate limits)
+    for (const d of docsSnapshot.docs) {
+        await addDoc(d);
+    }
+    for (const d of legacySnapshot.docs) {
         const data = d.data();
         if (data[callField] === undefined && data.isActive === true) {
-            addDoc(d);
+            await addDoc(d);
         }
-    });
+    }
 
     // 2. Fetch specific instructions (Prompts) from Firestore
     const promptSettings = await getPromptSettings();

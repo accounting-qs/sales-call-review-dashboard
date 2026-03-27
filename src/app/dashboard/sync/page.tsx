@@ -15,6 +15,9 @@ import {
     FileText,
     MessageSquare,
     ChevronRight,
+    ChevronLeft,
+    ChevronsLeft,
+    ChevronsRight,
     FileCode,
     Settings as SettingsIcon,
     AlertCircle,
@@ -128,6 +131,8 @@ export default function SyncPage() {
     const [showPeoplePanel, setShowPeoplePanel] = useState(false);
     const [addingRepEmail, setAddingRepEmail] = useState<string | null>(null);
     const [syncStats, setSyncStats] = useState<{ total: number; newCalls: number } | null>(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const ROWS_PER_PAGE = 25;
 
     const { reps: existingReps } = useReps();
     const existingRepEmails = useMemo(
@@ -473,7 +478,7 @@ export default function SyncPage() {
                         return (
                             <button
                                 key={tab.key}
-                                onClick={() => setCallFilter(tab.key)}
+                                onClick={() => { setCallFilter(tab.key); setCurrentPage(1); }}
                                 className={cn(
                                     "relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all duration-200",
                                     isActive
@@ -648,7 +653,7 @@ export default function SyncPage() {
                             placeholder="Filter by title, rep, or participant..."
                             className="pl-10 h-11 bg-white border-slate-200 rounded-xl text-sm"
                             value={search}
-                            onChange={(e) => setSearch(e.target.value)}
+                            onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
                         />
                     </div>
                 </div>
@@ -666,7 +671,11 @@ export default function SyncPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {filteredTranscripts.map((t) => (
+                                {(() => {
+                                    const totalPages = Math.ceil(filteredTranscripts.length / ROWS_PER_PAGE);
+                                    const startIdx = (currentPage - 1) * ROWS_PER_PAGE;
+                                    const paginatedRows = filteredTranscripts.slice(startIdx, startIdx + ROWS_PER_PAGE);
+                                    return paginatedRows.map((t) => (
                                     <TableRow key={t.id} className="border-slate-50 hover:bg-slate-50/50 transition-colors h-20 group cursor-pointer" onClick={() => handleViewDetails(t)}>
                                         <TableCell className="pl-8">
                                             <div className="flex flex-col">
@@ -678,12 +687,12 @@ export default function SyncPage() {
                                                 <span className="text-sm font-bold text-slate-900 truncate max-w-[250px] uppercase tracking-tight">{t.title}</span>
                                                 <Badge variant="outline" className={cn(
                                                     "text-[8px] font-black uppercase tracking-tighter",
-                                                    (t as any).callCategory === 'call1' ? "bg-indigo-50 text-indigo-600 border-indigo-200"
-                                                    : (t as any).callCategory === 'call2' ? "bg-emerald-50 text-emerald-600 border-emerald-200"
+                                                    t.callCategory === 'call1' ? "bg-indigo-50 text-indigo-600 border-indigo-200"
+                                                    : t.callCategory === 'call2' ? "bg-emerald-50 text-emerald-600 border-emerald-200"
                                                     : "bg-slate-50 text-slate-500 border-slate-200"
                                                 )}>
-                                                    {(t as any).callCategory === 'call1' ? 'Call 1'
-                                                     : (t as any).callCategory === 'call2' ? 'Call 2'
+                                                    {t.callCategory === 'call1' ? 'Call 1'
+                                                     : t.callCategory === 'call2' ? 'Call 2'
                                                      : 'Other'}
                                                 </Badge>
                                             </div>
@@ -763,10 +772,81 @@ export default function SyncPage() {
                                             </div>
                                         </TableCell>
                                     </TableRow>
-                                ))}
+                                    ));
+                                })()}
                             </TableBody>
                         </Table>
                     </CardContent>
+
+                    {/* Pagination Controls */}
+                    {filteredTranscripts.length > ROWS_PER_PAGE && (
+                        <div className="flex items-center justify-between px-8 py-4 border-t border-slate-100 bg-slate-50/30">
+                            <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                                Showing {((currentPage - 1) * ROWS_PER_PAGE) + 1}–{Math.min(currentPage * ROWS_PER_PAGE, filteredTranscripts.length)} of {filteredTranscripts.length} calls
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"
+                                    onClick={() => setCurrentPage(1)}
+                                    disabled={currentPage === 1}
+                                >
+                                    <ChevronsLeft className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                </Button>
+                                {(() => {
+                                    const totalPages = Math.ceil(filteredTranscripts.length / ROWS_PER_PAGE);
+                                    const pages: number[] = [];
+                                    const start = Math.max(1, currentPage - 2);
+                                    const end = Math.min(totalPages, start + 4);
+                                    for (let i = start; i <= end; i++) pages.push(i);
+                                    return pages.map(p => (
+                                        <Button
+                                            key={p}
+                                            variant={p === currentPage ? 'default' : 'ghost'}
+                                            size="sm"
+                                            className={cn(
+                                                "h-8 w-8 p-0 rounded-lg text-xs font-black",
+                                                p === currentPage
+                                                    ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md"
+                                                    : "text-slate-500 hover:text-indigo-600 hover:bg-indigo-50"
+                                            )}
+                                            onClick={() => setCurrentPage(p)}
+                                        >
+                                            {p}
+                                        </Button>
+                                    ));
+                                })()}
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"
+                                    onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredTranscripts.length / ROWS_PER_PAGE), p + 1))}
+                                    disabled={currentPage >= Math.ceil(filteredTranscripts.length / ROWS_PER_PAGE)}
+                                >
+                                    <ChevronRight className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"
+                                    onClick={() => setCurrentPage(Math.ceil(filteredTranscripts.length / ROWS_PER_PAGE))}
+                                    disabled={currentPage >= Math.ceil(filteredTranscripts.length / ROWS_PER_PAGE)}
+                                >
+                                    <ChevronsRight className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                 </Card>
             </div>
 

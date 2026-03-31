@@ -17,8 +17,8 @@ interface HeaderProps {
 
 export function Header({ breadcrumbs, actions }: HeaderProps) {
     return (
-        <header className="sticky top-0 z-30 flex h-16 items-center border-b border-slate-100 bg-white/80 px-8 backdrop-blur-md">
-            <div className="flex flex-1 items-center gap-4">
+        <header className="sticky top-0 z-30 flex h-16 items-center border-b border-slate-100 bg-white/80 px-6 backdrop-blur-md gap-4">
+            <div className="flex flex-1 items-center gap-4 min-w-0">
                 <Breadcrumb>
                     <BreadcrumbList>
                         {breadcrumbs.map((bc, i) => (
@@ -41,7 +41,7 @@ export function Header({ breadcrumbs, actions }: HeaderProps) {
                 </Breadcrumb>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-shrink-0">
                 {actions}
                 <div className="h-4 w-[1px] bg-slate-200" />
                 <UserNav />

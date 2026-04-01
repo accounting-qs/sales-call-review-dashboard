@@ -10,8 +10,6 @@ import {
     Award,
     ArrowRight
 } from 'lucide-react';
-import { db } from '@/lib/firebase';
-import { doc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
 import { Rep, Call, Analysis } from '@/types';
 import { cn } from '@/lib/utils';
 import { Header } from '@/components/layout/Header';
@@ -38,7 +36,7 @@ const formatDuration = (minutes: number) => {
 
 const formatDate = (timestamp: any) => {
     if (!timestamp) return 'N/A';
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp.seconds * 1000);
+    const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp.toDate?.() || new Date(timestamp.seconds * 1000);
     return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
 };
 
@@ -66,54 +64,35 @@ export default function RepProfilePage() {
     useEffect(() => {
         if (!decodedEmail) return;
 
-        const repRef = doc(db, 'reps', decodedEmail);
-        const unsubRep = onSnapshot(repRef, (docSnap) => {
-            if (docSnap.exists()) {
-                setRep(docSnap.data() as Rep);
+        let isMounted = true;
+
+        const fetchData = async () => {
+            try {
+                const repRes = await fetch(`/api/reps/${encodeURIComponent(decodedEmail)}`);
+                if (repRes.ok) {
+                    const repData = await repRes.json();
+                    if (isMounted) setRep(repData);
+                }
+
+                const callsRes = await fetch(`/api/calls?repEmail=${encodeURIComponent(decodedEmail)}`);
+                if (callsRes.ok) {
+                    const callsData = await callsRes.json();
+                    if (isMounted) setCalls(callsData);
+                }
+
+                if (isMounted) setLoading(false);
+            } catch (error) {
+                console.error("Error fetching rep data:", error);
+                if (isMounted) setLoading(false);
             }
-        });
+        };
 
-        // Listen to calls
-        const callsRef = collection(db, 'calls');
-        const qCalls = query(callsRef, where('repEmail', '==', decodedEmail));
-
-        const unsubCalls = onSnapshot(qCalls, async (snapshot) => {
-            const rawCallData = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            })) as Call[];
-
-            // Sort in memory to avoid needing a composite index
-            const callData = rawCallData.sort((a: any, b: any) => {
-                const dateA = a.date?.toMillis?.() || (a.date?.seconds * 1000) || 0;
-                const dateB = b.date?.toMillis?.() || (b.date?.seconds * 1000) || 0;
-                return dateB - dateA;
-            });
-
-            // Fetch analyses for these calls
-            const analysesRef = collection(db, 'analyses');
-            const qAnalyses = query(analysesRef, where('repEmail', '==', decodedEmail));
-            const analysesSnap = await getDocs(qAnalyses);
-            const analysesMap = new Map();
-            analysesSnap.forEach(doc => {
-                analysesMap.set(doc.data().callId, { id: doc.id, ...doc.data() });
-            });
-
-            const enrichedCalls = callData.map(c => ({
-                ...c,
-                analysis: analysesMap.get(c.id)
-            }));
-
-            setCalls(enrichedCalls);
-            setLoading(false);
-        }, (error) => {
-            console.error("Firebase Error in RepProfilePage:", error);
-            setLoading(false);
-        });
+        fetchData();
+        const interval = setInterval(fetchData, 5000); // Poll for updates
 
         return () => {
-            unsubRep();
-            unsubCalls();
+            isMounted = false;
+            clearInterval(interval);
         };
     }, [decodedEmail]);
 

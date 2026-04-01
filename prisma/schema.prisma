@@ -1,0 +1,83 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+model Rep {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  calls     Call[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Call {
+  id              String    @id // Fireflies ID usually
+  repId           String?
+  rep             Rep?      @relation(fields: [repId], references: [id])
+  title           String
+  date            DateTime
+  duration        Int
+  prospectName    String?
+  prospectCompany String?
+  transcriptUrl   String?
+  callCategory    String?   // 'call1', 'call2', 'other'
+  status          String    @default("synced") // 'synced', 'analyzing', 'completed', 'failed'
+  analysis        Analysis?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model Analysis {
+  id                     String   @id @default(uuid())
+  callId                 String   @unique
+  call                   Call     @relation(fields: [callId], references: [id])
+  callType               String   // 'evaluation' | 'followup'
+  outcome                String
+  dealRisk               String
+  scriptAlignment        String
+  callAnalysis           String
+  topCoachingPriorities  String[]
+  sections               Json     // Store the detailed scores/notes here
+  totalScore             Float
+  leadSource             String?
+  miscellaneous          String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model KnowledgeDocument {
+  id          String   @id @default(uuid())
+  name        String
+  r2Url       String?
+  extractedText String?
+  isActive    Boolean  @default(true)
+  useInCall1  Boolean  @default(true)
+  useInCall2  Boolean  @default(true)
+  chunks      KnowledgeChunk[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model KnowledgeChunk {
+  id         String   @id @default(uuid())
+  documentId String
+  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  content    String
+  embedding  Unsupported("vector(768)")
+  createdAt  DateTime @default(now())
+}
+
+model Setting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}

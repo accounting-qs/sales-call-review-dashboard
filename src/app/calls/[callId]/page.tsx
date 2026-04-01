@@ -17,8 +17,6 @@ import {
     ExternalLink,
     Target
 } from 'lucide-react';
-import { db } from '@/lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
 import { Call, Analysis } from '@/types';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
@@ -42,7 +40,7 @@ const formatDuration = (minutes: number) => {
 
 const formatDate = (timestamp: any) => {
     if (!timestamp) return 'N/A';
-    const date = timestamp.toDate();
+    const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp.toDate?.() || new Date(timestamp);
     return date.toLocaleDateString('en-US', {
         month: 'long',
         day: 'numeric',
@@ -73,23 +71,28 @@ export default function CallDetailPage() {
     useEffect(() => {
         if (!callId) return;
 
-        const unsubCall = onSnapshot(doc(db, 'calls', callId as string), (docSnap) => {
-            if (docSnap.exists()) {
-                setCall(docSnap.data() as Call);
+        let isMounted = true;
+        
+        const fetchCallData = async () => {
+            try {
+                const res = await fetch(`/api/calls/${callId}`);
+                if (!res.ok) throw new Error("Not found");
+                const data = await res.json();
+                
+                if (isMounted) {
+                    setCall(data.call);
+                    setAnalysis(data.analysis);
+                    setLoading(false);
+                }
+            } catch (error) {
+                console.error("Error fetching call:", error);
+                if (isMounted) setLoading(false);
             }
-        });
-
-        const unsubAnalysis = onSnapshot(doc(db, 'analyses', callId as string), (docSnap) => {
-            if (docSnap.exists()) {
-                setAnalysis(docSnap.data() as Analysis);
-            }
-            setLoading(false);
-        });
-
-        return () => {
-            unsubCall();
-            unsubAnalysis();
         };
+
+        fetchCallData();
+
+        return () => { isMounted = false; };
     }, [callId]);
 
     if (loading) return (

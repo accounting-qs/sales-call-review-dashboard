@@ -1,6 +1,4 @@
 import { useState, useEffect } from 'react';
-import { db } from '@/lib/firebase';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { Rep } from '@/types';
 
 export function useReps() {
@@ -8,19 +6,30 @@ export function useReps() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const repsRef = collection(db, 'reps');
-        const q = query(repsRef, orderBy('name', 'asc'));
+        let isMounted = true;
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const repsData = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            })) as Rep[];
-            setReps(repsData);
-            setLoading(false);
-        });
+        const fetchReps = async () => {
+            try {
+                const res = await fetch('/api/reps');
+                if (!res.ok) throw new Error('Failed to fetch reps');
+                const data = await res.json();
+                if (isMounted) {
+                    setReps(data);
+                    setLoading(false);
+                }
+            } catch (error) {
+                console.error("Error fetching reps:", error);
+                if (isMounted) setLoading(false);
+            }
+        };
 
-        return () => unsubscribe();
+        fetchReps();
+        const interval = setInterval(fetchReps, 5000); // Emulate real-time syncing
+
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
     }, []);
 
     return { reps, loading };

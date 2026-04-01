@@ -26,8 +26,6 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { doc, setDoc, deleteDoc, updateDoc, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
@@ -87,8 +85,10 @@ export default function Dashboard() {
         if (!editRepName || !editRepEmail) return;
         setEdittingRep(true);
         try {
-            await updateDoc(doc(db, 'reps', editRepEmail), {
-                name: editRepName.trim(),
+            await fetch(`/api/reps/${encodeURIComponent(editRepEmail)}`, {
+                method: 'PUT',
+                body: JSON.stringify({ name: editRepName.trim() }),
+                headers: { 'Content-Type': 'application/json' }
             });
             setIsEditRepOpen(false);
         } catch (e) {
@@ -102,7 +102,9 @@ export default function Dashboard() {
         if (!deleteRepEmail) return;
         setDeletingRep(true);
         try {
-            await deleteDoc(doc(db, 'reps', deleteRepEmail));
+            await fetch(`/api/reps/${encodeURIComponent(deleteRepEmail)}`, {
+                method: 'DELETE'
+            });
             setIsDeleteRepOpen(false);
         } catch (e) {
             console.error("Failed to delete rep", e);
@@ -115,13 +117,10 @@ export default function Dashboard() {
         if (!newRepEmail || !newRepName) return;
         setAddingRep(true);
         try {
-            await setDoc(doc(db, 'reps', newRepEmail.toLowerCase().trim()), {
-                name: newRepName.trim(),
-                email: newRepEmail.toLowerCase().trim(),
-                totalCalls: 0,
-                avgScore: 0,
-                isActive: true,
-                createdAt: Timestamp.now()
+            await fetch('/api/reps', {
+                method: 'POST',
+                body: JSON.stringify({ email: newRepEmail, name: newRepName }),
+                headers: { 'Content-Type': 'application/json' }
             });
             setIsAddRepOpen(false);
             setNewRepEmail('');

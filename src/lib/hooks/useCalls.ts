@@ -1,6 +1,4 @@
 import { useState, useEffect } from 'react';
-import { db } from '@/lib/firebase';
-import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
 import { Call } from '@/types';
 
 export function useCalls(repEmail?: string) {
@@ -8,23 +6,35 @@ export function useCalls(repEmail?: string) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const callsRef = collection(db, 'calls');
-        let q = query(callsRef, orderBy('date', 'desc'));
+        let isMounted = true;
 
-        if (repEmail) {
-            q = query(callsRef, where('repEmail', '==', repEmail), orderBy('date', 'desc'));
-        }
+        const fetchCalls = async () => {
+            try {
+                const url = repEmail ? `/api/calls?repEmail=${encodeURIComponent(repEmail)}` : '/api/calls';
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Failed to fetch calls');
+                const data = await res.json();
+                
+                if (isMounted) {
+                    // Sort locally since Prisma might return them sorted, but good to be safe for dashboard rendering
+                    data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                    setCalls(data);
+                    setLoading(false);
+                }
+            } catch (error) {
+                console.error("Error fetching calls:", error);
+                if (isMounted) setLoading(false);
+            }
+        };
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const callsData = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            })) as Call[];
-            setCalls(callsData);
-            setLoading(false);
-        });
+        setLoading(true);
+        fetchCalls();
+        const interval = setInterval(fetchCalls, 5000); // Emulate real-time syncing
 
-        return () => unsubscribe();
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
     }, [repEmail]);
 
     return { calls, loading };

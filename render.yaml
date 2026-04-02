@@ -50,3 +50,30 @@ services:
         sync: false
       - key: CLOUDFLARE_R2_BUCKET_NAME
         sync: false
+      - key: CRON_SECRET
+        sync: false
+
+  - type: cron
+    name: salespulse-sync-cron
+    runtime: node
+    repo: https://github.com/accounting-qs/sales-call-review-dashboard
+    region: oregon
+    plan: starter
+    branch: main
+    schedule: "0 8 * * *"
+    buildCommand: "echo 'no build needed'"
+    startCommand: |
+      node -e "
+        const https = require('https');
+        const secret = process.env.CRON_SECRET || 'salespulse_daily_sync_key_123';
+        const url = 'https://sales-call-review-dashboard.onrender.com/api/cron/sync?force=true';
+        const req = https.get(url, { headers: { 'Authorization': 'Bearer ' + secret } }, (res) => {
+          let data = '';
+          res.on('data', (c) => data += c);
+          res.on('end', () => { console.log('Status:', res.statusCode, data); process.exit(0); });
+        });
+        req.on('error', (e) => { console.error('Error:', e.message); process.exit(1); });
+      "
+    envVars:
+      - key: CRON_SECRET
+        sync: false

@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-if (typeof global !== "undefined" && !(global as any).DOMMatrix) {
-    (global as any).DOMMatrix = class DOMMatrix {};
-}
-const pdfParse = require("pdf-parse");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfParse: (buffer: Buffer) => Promise<{ text: string }> = require("pdf-parse");
 import { v4 as uuidv4 } from "uuid";
 
 // Configure Cloudflare R2 Client (AWS S3 Compatible)

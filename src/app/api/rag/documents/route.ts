@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse: (buffer: Buffer) => Promise<{ text: string }> = require("pdf-parse");
+const pdfParse: (dataBuffer: Buffer, options?: object) => Promise<{ text: string; numpages: number }> = require("pdf-parse");
 import { v4 as uuidv4 } from "uuid";
 
 // Configure Cloudflare R2 Client (AWS S3 Compatible)

@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
+const R2_ACCOUNT_ID = (process.env.CLOUDFLARE_R2_ACCOUNT_ID || '').replace(/"/g, '').trim();
+const R2_ACCESS_KEY = (process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '').replace(/"/g, '').trim();
+const R2_SECRET_KEY = (process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '').replace(/"/g, '').trim();
+
 const r2Client = new S3Client({
     region: "auto",
-    endpoint: `https://${process.env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
     credentials: {
-        accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY!,
+        accessKeyId: R2_ACCESS_KEY,
+        secretAccessKey: R2_SECRET_KEY,
     },
 });
 

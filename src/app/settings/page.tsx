@@ -381,53 +381,132 @@ export default function SettingsPage() {
                         <Card className="border-none shadow-sm bg-white overflow-hidden">
                             <CardHeader className="bg-slate-50/50 px-6 py-6 border-b border-slate-100">
                                 <CardTitle className="text-base font-bold text-slate-900">Pipeline Model Configuration</CardTitle>
-                                <CardDescription className="text-xs">Define which LLM powers each step of the analysis pipeline</CardDescription>
+                                <CardDescription className="text-xs">Select which AI model powers transcript analysis. Supports Gemini, Claude, and OpenAI.</CardDescription>
                             </CardHeader>
                             <CardContent className="p-8 space-y-8">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div className="space-y-3">
                                         <div className="space-y-1">
                                             <Label className="text-sm font-bold text-slate-900">Primary AI Reasoning Model</Label>
-                                            <p className="text-[10px] text-slate-400 font-medium">Select the foundational model to perform all transcript analytics, scoring, and coaching extraction.</p>
+                                            <p className="text-[10px] text-slate-400 font-medium">The model selected here will perform all transcript analytics, scoring, and coaching extraction.</p>
                                         </div>
                                         <Select
                                             value={pipelineSettings.aiModel}
                                             onValueChange={(val) => setPipelineSettings({ ...pipelineSettings, aiModel: val })}
                                         >
                                             <SelectTrigger className="w-full bg-white border border-slate-200 rounded-xl px-4 py-6 text-sm font-semibold text-slate-700 hover:border-indigo-200 hover:bg-slate-50/50 transition-all cursor-pointer shadow-sm">
-                                                <SelectValue placeholder="Select Gemini Model" />
+                                                <SelectValue placeholder="Select AI Model" />
                                             </SelectTrigger>
-                                            <SelectContent className="rounded-xl border-slate-200 shadow-xl overflow-hidden">
-                                                <div className="bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">Recommended (2026)</div>
-                                                <SelectItem value="gemini-3.0-pro" className="py-3 cursor-pointer">
+                                            <SelectContent className="rounded-xl border-slate-200 shadow-xl overflow-hidden max-h-[480px]">
+
+                                                {/* ── Google Gemini ── */}
+                                                <div className="bg-blue-50 px-3 py-2 text-[10px] font-bold text-blue-500 uppercase tracking-widest border-b border-blue-100 flex items-center gap-1.5">
+                                                    <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" /> Google Gemini
+                                                </div>
+                                                <SelectItem value="gemini-3.1-pro-preview" className="py-2.5 cursor-pointer">
                                                     <div className="flex flex-col">
-                                                        <span className="font-bold text-slate-900">Gemini 3.0 Pro</span>
-                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Absolute best reasoning & needle-in-haystack search</span>
+                                                        <span className="font-bold text-slate-900">Gemini 3.1 Pro <span className="text-[9px] text-blue-500 font-semibold ml-1">PREVIEW</span></span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Most advanced multimodal reasoning, 1M context</span>
                                                     </div>
                                                 </SelectItem>
-                                                <SelectItem value="gemini-3.0-flash" className="py-3 cursor-pointer">
+                                                <SelectItem value="gemini-3.1-flash-lite-preview" className="py-2.5 cursor-pointer">
                                                     <div className="flex flex-col">
-                                                        <span className="font-bold text-slate-900">Gemini 3.0 Flash</span>
-                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Incredibly fast, minimal tokens cost</span>
+                                                        <span className="font-bold text-slate-900">Gemini 3.1 Flash-Lite <span className="text-[9px] text-blue-500 font-semibold ml-1">PREVIEW</span></span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Most cost-efficient, high-volume latency-sensitive</span>
                                                     </div>
                                                 </SelectItem>
-                                                <div className="bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-y border-slate-100">Legacy Models (Stable)</div>
-                                                <SelectItem value="gemini-2.5-pro" className="py-3 cursor-pointer">
+                                                <SelectItem value="gemini-3-flash-preview" className="py-2.5 cursor-pointer">
                                                     <div className="flex flex-col">
-                                                        <span className="font-bold text-slate-900">Gemini 2.5 Pro</span>
-                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Reliable workhorse from late 2024/2025</span>
+                                                        <span className="font-bold text-slate-900">Gemini 3 Flash <span className="text-[9px] text-blue-500 font-semibold ml-1">PREVIEW</span></span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Powerful agentic + coding, fast multimodal</span>
                                                     </div>
                                                 </SelectItem>
-                                                <SelectItem value="gemini-2.5-flash" className="py-3 cursor-pointer">
+                                                <SelectItem value="gemini-2.5-pro" className="py-2.5 cursor-pointer">
                                                     <div className="flex flex-col">
-                                                        <span className="font-bold text-slate-900">Gemini 2.5 Flash</span>
-                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Efficient legacy speed</span>
+                                                        <span className="font-bold text-slate-900">Gemini 2.5 Pro <span className="text-[9px] text-green-600 font-semibold ml-1">GA</span></span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Complex reasoning + coding, 1M context (recommended)</span>
                                                     </div>
                                                 </SelectItem>
-                                                <SelectItem value="gemini-1.5-pro-latest" className="py-3 cursor-pointer">
+                                                <SelectItem value="gemini-2.5-flash" className="py-2.5 cursor-pointer">
                                                     <div className="flex flex-col">
-                                                        <span className="font-bold text-slate-900">Gemini 1.5 Pro</span>
-                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Classic 2024 model</span>
+                                                        <span className="font-bold text-slate-900">Gemini 2.5 Flash <span className="text-[9px] text-green-600 font-semibold ml-1">GA</span></span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Balanced intelligence with low latency + cost</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="gemini-2.5-flash-lite" className="py-2.5 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">Gemini 2.5 Flash-Lite <span className="text-[9px] text-green-600 font-semibold ml-1">GA</span></span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Massive scale, highest throughput, lowest cost</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="gemini-2.0-flash" className="py-2.5 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">Gemini 2.0 Flash <span className="text-[9px] text-amber-600 font-semibold ml-1">LEGACY</span></span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">General purpose, scheduled sunset June 2026</span>
+                                                    </div>
+                                                </SelectItem>
+
+                                                {/* ── Anthropic Claude ── */}
+                                                <div className="bg-orange-50 px-3 py-2 text-[10px] font-bold text-orange-500 uppercase tracking-widest border-y border-orange-100 flex items-center gap-1.5 mt-1">
+                                                    <span className="w-2 h-2 rounded-full bg-orange-400 inline-block" /> Anthropic Claude
+                                                </div>
+                                                <SelectItem value="claude-opus-4.6" className="py-2.5 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">Claude Opus 4.6</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Flagship — deep reasoning, agentic tasks, 1M context</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="claude-sonnet-4.6" className="py-2.5 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">Claude Sonnet 4.6</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Best daily driver — Opus intelligence, faster + cheaper</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="claude-haiku-4.5" className="py-2.5 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">Claude Haiku 4.5</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Budget tier — fast, cost-effective execution</span>
+                                                    </div>
+                                                </SelectItem>
+
+                                                {/* ── OpenAI ── */}
+                                                <div className="bg-emerald-50 px-3 py-2 text-[10px] font-bold text-emerald-600 uppercase tracking-widest border-y border-emerald-100 flex items-center gap-1.5 mt-1">
+                                                    <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" /> OpenAI
+                                                </div>
+                                                <SelectItem value="gpt-5.4-pro" className="py-2.5 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">GPT-5.4 Pro</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Highest precision, complex reasoning + coding</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="gpt-5.4" className="py-2.5 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">GPT-5.4</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Flagship frontier model for high-intelligence tasks</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="gpt-5.4-mini" className="py-2.5 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">GPT-5.4 Mini</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">High-performance balanced for coding + efficiency</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="gpt-5.4-nano" className="py-2.5 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">GPT-5.4 Nano</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Most cost-efficient, high-volume repetitive tasks</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="gpt-4.1" className="py-2.5 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">GPT-4.1</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Versatile non-reasoning — text analysis, vision</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="gpt-4.1-mini" className="py-2.5 cursor-pointer">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-900">GPT-4.1 Mini</span>
+                                                        <span className="text-[10px] text-slate-500 font-medium mt-0.5">Efficient workhorse, optimized for cost + speed</span>
                                                     </div>
                                                 </SelectItem>
                                             </SelectContent>
@@ -435,12 +514,25 @@ export default function SettingsPage() {
                                     </div>
                                     <div className="space-y-3">
                                         <div className="space-y-1">
-                                            <Label className="text-sm font-bold text-slate-900 flex items-center gap-2">Gemini File API (RAG Embedding) <Badge variant="secondary" className="text-[10px] bg-green-50 text-green-600 border-green-100 uppercase tracking-widest px-1.5 h-4">Native</Badge></Label>
-                                            <p className="text-[10px] text-slate-400 font-medium">Document embeddings and vector search are now handled natively inside the primary model context.</p>
+                                            <Label className="text-sm font-bold text-slate-900 flex items-center gap-2">API Key Status</Label>
+                                            <p className="text-[10px] text-slate-400 font-medium">Environment variables configured for each provider. Set in Render Dashboard → Environment.</p>
                                         </div>
-                                        <div className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-sm font-semibold text-slate-400 flex items-center justify-between cursor-not-allowed">
-                                            <span>Merged with Primary Model</span>
-                                            <Database className="w-4 h-4 text-slate-300" />
+                                        <div className="space-y-2.5">
+                                            <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+                                                <span className="w-2 h-2 rounded-full bg-blue-400 inline-block shrink-0" />
+                                                <span className="text-sm font-semibold text-slate-700 flex-1">GEMINI_API_KEY</span>
+                                                <Badge variant="secondary" className="text-[9px] bg-green-50 text-green-600 border-green-100">Configured</Badge>
+                                            </div>
+                                            <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+                                                <span className="w-2 h-2 rounded-full bg-orange-400 inline-block shrink-0" />
+                                                <span className="text-sm font-semibold text-slate-700 flex-1">ANTHROPIC_API_KEY</span>
+                                                <Badge variant="secondary" className="text-[9px] bg-slate-100 text-slate-400 border-slate-200">Add in Render</Badge>
+                                            </div>
+                                            <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+                                                <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shrink-0" />
+                                                <span className="text-sm font-semibold text-slate-700 flex-1">OPENAI_API_KEY</span>
+                                                <Badge variant="secondary" className="text-[9px] bg-slate-100 text-slate-400 border-slate-200">Add in Render</Badge>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

@@ -3,14 +3,24 @@ import { getPromptSettings } from "./promptSettings";
 import { prisma } from "@/lib/prisma";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-pro";
+
+/**
+ * Determine which provider a model belongs to based on its prefix
+ */
+function getProvider(model: string): 'gemini' | 'claude' | 'openai' {
+    if (model.startsWith('claude-')) return 'claude';
+    if (model.startsWith('gpt-')) return 'openai';
+    return 'gemini';
+}
 
 export async function analyzeSalesCall(
     transcript: string,
     metadata: Partial<Call>,
     callType: CallType
 ): Promise<Partial<Analysis>> {
-    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not set");
 
     // 0. Fetch the dynamic model selection from Prisma Settings
     let selectedModel = DEFAULT_MODEL;
@@ -24,10 +34,16 @@ export async function analyzeSalesCall(
         console.warn('Could not fetch dynamic model from settings. Using default.', err);
     }
 
-    // 1. Fetch relevant reference docs from PostgreSQL natively (No more Gemini File API)
+    const provider = getProvider(selectedModel);
+
+    // Validate API key for selected provider
+    if (provider === 'gemini' && !GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not set");
+    if (provider === 'claude' && !ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set. Add it in Render Environment Variables.");
+    if (provider === 'openai' && !OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not set. Add it in Render Environment Variables.");
+
+    // 1. Fetch relevant reference docs from PostgreSQL
     const callField = callType === 'evaluation' ? 'useInCall1' : 'useInCall2';
     
-    // Fetch active KnowledgeDocuments matched to this call type
     const docs = await prisma.knowledgeDocument.findMany({
         where: {
             isActive: true,
@@ -45,7 +61,7 @@ export async function analyzeSalesCall(
         }
     });
 
-    // 2. Fetch specific instructions (Prompts) from Firestore 
+    // 2. Fetch specific instructions (Prompts) 
     const promptSettings = await getPromptSettings();
     const systemPrompt = callType === 'evaluation'
         ? promptSettings.call1Prompt
@@ -76,37 +92,23 @@ export async function analyzeSalesCall(
         ${transcript}
     `;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${GEMINI_API_KEY}`;
+    const fullPrompt = systemPrompt + "\n\n" + userPromptContent;
 
-    console.log(`[Gemini/Postgres] Starting ${callTypeLabel} analysis for "${metadata.title}" using ${selectedModel}...`);
-    console.log(`[Gemini/Postgres] Injected ${docs.length} native Postgres documents as text rubric context: ${selectedDocNames.join(', ') || '(none)'}`);
+    console.log(`[AI/${provider}] Starting ${callTypeLabel} analysis for "${metadata.title}" using ${selectedModel}...`);
+    console.log(`[AI/${provider}] Injected ${docs.length} native Postgres documents as text rubric context: ${selectedDocNames.join(', ') || '(none)'}`);
 
-    const bodyWithDocs = {
-        contents: [{
-            role: "user",
-            parts: [
-                { text: systemPrompt + "\n\n" + userPromptContent }
-            ]
-        }]
-    };
+    let responseText: string;
 
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyWithDocs)
-    });
-
-    const result = await response.json();
-
-    if (result.error) {
-        throw new Error(`Gemini API error: ${result.error.message}`);
+    // ─── Route to the appropriate provider ───
+    if (provider === 'claude') {
+        responseText = await callClaude(selectedModel, systemPrompt, userPromptContent);
+    } else if (provider === 'openai') {
+        responseText = await callOpenAI(selectedModel, systemPrompt, userPromptContent);
+    } else {
+        responseText = await callGemini(selectedModel, fullPrompt);
     }
 
-    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!responseText) {
-        throw new Error("Empty response from Gemini");
-    }
-
+    // ─── Parse the JSON response ───
     try {
         const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/) || [null, responseText];
         const cleanedJson = jsonMatch[1]!.trim();
@@ -120,7 +122,79 @@ export async function analyzeSalesCall(
             callType
         };
     } catch (error) {
-        console.error("Failed to parse Gemini response:", responseText, error);
-        throw new Error("Analysis failed: Invalid JSON format from AI");
+        console.error(`Failed to parse ${provider} response:`, responseText, error);
+        throw new Error(`Analysis failed: Invalid JSON format from ${provider} AI (${selectedModel})`);
     }
+}
+
+// ════════════════════════════════════════════════════════════════
+// Provider-specific API calls
+// ════════════════════════════════════════════════════════════════
+
+async function callGemini(model: string, fullPrompt: string): Promise<string> {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: fullPrompt }] }]
+        })
+    });
+
+    const result = await response.json();
+    if (result.error) throw new Error(`Gemini API error: ${result.error.message}`);
+
+    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error("Empty response from Gemini");
+    return text;
+}
+
+async function callClaude(model: string, systemPrompt: string, userPrompt: string): Promise<string> {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY!,
+            'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+            model,
+            max_tokens: 8192,
+            system: systemPrompt,
+            messages: [{ role: "user", content: userPrompt }]
+        })
+    });
+
+    const result = await response.json();
+    if (result.error) throw new Error(`Claude API error: ${result.error.message}`);
+
+    const text = result.content?.[0]?.text;
+    if (!text) throw new Error("Empty response from Claude");
+    return text;
+}
+
+async function callOpenAI(model: string, systemPrompt: string, userPrompt: string): Promise<string> {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${OPENAI_API_KEY}`
+        },
+        body: JSON.stringify({
+            model,
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
+            ],
+            max_tokens: 8192
+        })
+    });
+
+    const result = await response.json();
+    if (result.error) throw new Error(`OpenAI API error: ${result.error.message}`);
+
+    const text = result.choices?.[0]?.message?.content;
+    if (!text) throw new Error("Empty response from OpenAI");
+    return text;
 }

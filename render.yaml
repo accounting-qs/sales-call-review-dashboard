@@ -23,12 +23,6 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      - key: GEMINI_FILE_SEARCH_STORE_ID
-        sync: false
-      - key: GOOGLE_SPREADSHEET_ID
-        sync: false
-      - key: GOOGLE_DOCS_FOLDER_ID
-        sync: false
       - key: CLICKUP_API_KEY
         sync: false
       - key: CLICKUP_WORKSPACE_ID

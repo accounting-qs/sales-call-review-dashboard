@@ -20,8 +20,7 @@ import {
     AlertCircle,
     Target
 } from 'lucide-react';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+// Settings now use Prisma via REST API (no Firestore needed)
 import { Header } from '@/components/layout/Header';
 import { seedData } from '@/lib/seed';
 import { cn } from '@/lib/utils';
@@ -72,10 +71,10 @@ export default function SettingsPage() {
     React.useEffect(() => {
         const loadSettings = async () => {
             try {
-                const docRef = doc(db, 'settings', 'fireflies_pipeline');
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                    setPipelineSettings(prev => ({ ...prev, ...docSnap.data() }));
+                const res = await fetch('/api/settings/pipeline');
+                if (res.ok) {
+                    const data = await res.json();
+                    setPipelineSettings(prev => ({ ...prev, ...data }));
                 }
             } catch (error) {
                 console.error("Error loading settings:", error);
@@ -87,11 +86,19 @@ export default function SettingsPage() {
     const handleSavePipeline = async () => {
         setSavingSettings(true);
         try {
-            await setDoc(doc(db, 'settings', 'fireflies_pipeline'), {
-                ...pipelineSettings,
-                updatedAt: new Date().toISOString()
-            }, { merge: true });
-            alert("Pipeline settings saved successfully!");
+            const res = await fetch('/api/settings/pipeline', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ...pipelineSettings,
+                    updatedAt: new Date().toISOString()
+                })
+            });
+            if (res.ok) {
+                alert("Pipeline settings saved successfully!");
+            } else {
+                throw new Error('Failed to save');
+            }
         } catch (error) {
             console.error("Error saving settings:", error);
             alert("Failed to save settings");

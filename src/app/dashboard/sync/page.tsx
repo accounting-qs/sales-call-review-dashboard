@@ -68,8 +68,7 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
+// Sync page now uses Prisma via REST APIs (no direct Firestore)
 import { useReps } from '@/lib/hooks/useReps';
 
 interface SyncedTranscript {
@@ -140,31 +139,15 @@ export default function SyncPage() {
         [existingReps]
     );
 
-    // Load saved calls from Firestore on page load (instant, no API call)
+    // Load saved calls from Prisma via API on page load
     const loadSavedCalls = async () => {
         try {
-            const snapshot = await getDocs(collection(db, 'synced_calls'));
-            const calls = snapshot.docs.map(d => {
-                const data = d.data();
-                return {
-                    id: d.id,
-                    firefliesId: d.id,
-                    title: data.title || null,
-                    date: data.date,
-                    duration: data.duration,
-                    host_email: data.hostEmail || null,
-                    organizer_email: data.organizerEmail || null,
-                    transcript_url: data.transcriptUrl || '',
-                    participants: data.participants || [],
-                    callCategory: data.callCategory || 'other',
-                    isAnalyzed: data.isAnalyzed || false,
-                    hasTranscript: data.hasTranscript !== false,
-                    syncedAt: data.syncedAt || '',
-                } as SyncedTranscript;
-            });
-            // Sort by date descending (newest first)
-            calls.sort((a, b) => b.date - a.date);
-            setTranscripts(calls);
+            const res = await fetch('/api/sync/saved');
+            const calls = await res.json();
+            if (Array.isArray(calls)) {
+                calls.sort((a: any, b: any) => (b.date || 0) - (a.date || 0));
+                setTranscripts(calls);
+            }
         } catch (err) {
             console.error('Error loading saved calls:', err);
         } finally {
@@ -200,9 +183,9 @@ export default function SyncPage() {
                 return;
             }
 
-            // 2. Load keyword settings for classification
-            const settingsSnap = await getDoc(doc(db, 'settings', 'fireflies_pipeline'));
-            const settings = settingsSnap.exists() ? settingsSnap.data() : {};
+            // 2. Load keyword settings for classification from Prisma API
+            const settingsRes = await fetch('/api/settings/pipeline');
+            const settings = settingsRes.ok ? await settingsRes.json() : {};
 
             const evalKw = (settings.evaluationKeywords || 'Evaluation Call, Business Evaluation')
                 .split(',').map((k: string) => k.trim().toLowerCase()).filter((k: string) => k);
@@ -211,20 +194,16 @@ export default function SyncPage() {
             const excludeKw = (settings.excludedKeywords || 'Test, Internal')
                 .split(',').map((k: string) => k.trim().toLowerCase()).filter((k: string) => k);
 
-            // 3. Check which calls are already analyzed
-            const analyzedIds = new Set<string>();
-            const callsRef = collection(db, 'calls');
-            const allIds = data.map((t: any) => t.id);
-            for (let i = 0; i < allIds.length; i += 30) {
-                const batch = allIds.slice(i, i + 30);
-                if (batch.length > 0) {
-                    const q = query(callsRef, where('firefliesId', 'in', batch));
-                    const snap = await getDocs(q);
-                    snap.docs.forEach(d => analyzedIds.add(d.data().firefliesId));
-                }
-            }
+            // 3. Check which calls are already analyzed (Prisma)
+            const analyzedRes = await fetch('/api/calls');
+            const analyzedCalls = analyzedRes.ok ? await analyzedRes.json() : [];
+            const analyzedIds = new Set<string>(
+                analyzedCalls
+                    .filter((c: any) => c.status === 'completed')
+                    .map((c: any) => c.id)
+            );
 
-            // 4. Classify and save each transcript to Firestore
+            // 4. Classify each transcript and build the synced list
             const now = new Date().toISOString();
             let newCalls = 0;
             const synced: SyncedTranscript[] = [];
@@ -241,13 +220,14 @@ export default function SyncPage() {
                 }
 
                 const syncedCall = {
+                    id: t.id,
                     firefliesId: t.id,
                     title: t.title || 'Untitled',
                     date: t.date,
                     duration: t.duration,
-                    hostEmail: t.host_email || '',
-                    organizerEmail: t.organizer_email || '',
-                    transcriptUrl: t.transcript_url || '',
+                    host_email: t.host_email || '',
+                    organizer_email: t.organizer_email || '',
+                    transcript_url: t.transcript_url || '',
                     participants: t.participants || [],
                     callCategory,
                     syncedAt: now,
@@ -255,29 +235,19 @@ export default function SyncPage() {
                     hasTranscript: t.duration > 30,
                 };
 
-                // Upsert to Firestore (merge to preserve existing syncedAt)
-                try {
-                    await setDoc(doc(db, 'synced_calls', t.id), syncedCall, { merge: true });
-                    newCalls++;
-                } catch (e) {
-                    console.warn(`Failed to save call ${t.id}:`, e);
-                }
+                newCalls++;
+                synced.push(syncedCall as SyncedTranscript);
+            }
 
-                synced.push({
-                    id: t.id,
-                    firefliesId: t.id,
-                    title: t.title,
-                    date: t.date,
-                    duration: t.duration,
-                    host_email: t.host_email,
-                    organizer_email: t.organizer_email,
-                    transcript_url: t.transcript_url || '',
-                    participants: t.participants || [],
-                    callCategory,
-                    isAnalyzed: analyzedIds.has(t.id),
-                    hasTranscript: t.duration > 30,
-                    syncedAt: now,
-                } as SyncedTranscript);
+            // 5. Save all synced calls to Prisma via API
+            try {
+                await fetch('/api/sync/saved', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ calls: synced })
+                });
+            } catch (e) {
+                console.warn('Failed to persist synced calls:', e);
             }
 
             synced.sort((a, b) => b.date - a.date);
@@ -285,8 +255,12 @@ export default function SyncPage() {
             setSyncStats({ total: synced.length, newCalls });
             setLastSyncedAt(now);
 
-            // Update lastSyncedAt
-            await setDoc(doc(db, 'settings', 'fireflies_pipeline'), { lastSyncedAt: now }, { merge: true });
+            // Update lastSyncedAt in pipeline settings
+            await fetch('/api/settings/pipeline', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lastSyncedAt: now })
+            });
 
         } catch (error: any) {
             console.error("Sync error:", error);
@@ -303,10 +277,9 @@ export default function SyncPage() {
 
     const loadSettings = async () => {
         try {
-            const docRef = doc(db, 'settings', 'fireflies_pipeline');
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const s = docSnap.data();
+            const res = await fetch('/api/settings/pipeline');
+            if (res.ok) {
+                const s = await res.json();
                 if (s.lastSyncedAt) setLastSyncedAt(s.lastSyncedAt);
             }
         } catch (error) {
@@ -617,14 +590,15 @@ export default function SyncPage() {
                                                             e.stopPropagation();
                                                             setAddingRepEmail(person.email);
                                                             try {
-                                                                await setDoc(doc(db, 'reps', person.email), {
-                                                                    name: person.name,
-                                                                    email: person.email,
-                                                                    totalCalls: 0,
-                                                                    avgScore: 0,
-                                                                    isActive: true,
-                                                                    createdAt: Timestamp.now()
+                                                                const addRes = await fetch('/api/reps', {
+                                                                    method: 'POST',
+                                                                    headers: { 'Content-Type': 'application/json' },
+                                                                    body: JSON.stringify({
+                                                                        name: person.name,
+                                                                        email: person.email,
+                                                                    })
                                                                 });
+                                                                if (!addRes.ok) throw new Error('API error');
                                                             } catch (err) {
                                                                 console.error('Failed to add rep:', err);
                                                                 alert('Failed to add representative');

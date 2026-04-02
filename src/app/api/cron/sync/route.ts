@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { processLatestCalls } from "@/lib/services/orchestrator";
-import { db } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { prisma } from "@/lib/prisma";
 
 export const maxDuration = 300; // 5 minutes max
 
@@ -9,7 +8,6 @@ export const maxDuration = 300; // 5 minutes max
  * GET /api/cron/sync
  * Nightly automated sync (default 12am EST).
  * Runs AI analysis on new unprocessed calls via orchestrator.
- * Note: Call persistence to synced_calls is handled client-side during manual sync.
  */
 export async function GET(request: Request) {
     // Security: require CRON_SECRET
@@ -23,10 +21,9 @@ export async function GET(request: Request) {
     try {
         console.log("[CRON] Starting nightly sync...");
 
-        // Fetch settings
-        const settingsRef = doc(db, 'settings', 'fireflies_pipeline');
-        const settingsSnap = await getDoc(settingsRef);
-        const settings = settingsSnap.exists() ? settingsSnap.data() : { autoSyncEnabled: true, dailySyncTime: '00:00' };
+        // Fetch settings from Prisma
+        const settingObj = await prisma.setting.findUnique({ where: { key: "fireflies_pipeline" } });
+        const settings = (settingObj?.value as any) || { autoSyncEnabled: true, dailySyncTime: '00:00' };
 
         // Check if auto sync is enabled
         if (!settings.autoSyncEnabled) {

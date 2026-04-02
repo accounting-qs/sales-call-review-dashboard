@@ -31,8 +31,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { doc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+// Sidebar rep management now uses Prisma via REST API
 
 const getScoreColor = (score: number) => {
     if (score < 5) return 'bg-red-500';
@@ -86,8 +85,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         if (!editRepName || !editRepEmail) return;
         setEdittingRep(true);
         try {
-            await updateDoc(doc(db, 'reps', editRepEmail), {
-                name: editRepName.trim(),
+            await fetch(`/api/reps/${encodeURIComponent(editRepEmail)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: editRepName.trim() }),
             });
             setIsEditRepOpen(false);
         } catch (e) {
@@ -101,7 +102,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         if (!deleteRepEmail) return;
         setDeletingRep(true);
         try {
-            await deleteDoc(doc(db, 'reps', deleteRepEmail));
+            await fetch(`/api/reps/${encodeURIComponent(deleteRepEmail)}`, {
+                method: 'DELETE',
+            });
             setIsDeleteRepOpen(false);
         } catch (e) {
             console.error("Failed to delete rep", e);

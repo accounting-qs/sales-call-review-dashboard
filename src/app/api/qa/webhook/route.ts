@@ -1,18 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { prisma } from '@/lib/prisma';
 import { sendClickUpNotification } from '@/lib/services/clickup';
 
 export async function POST() {
     try {
-        const settingsRef = doc(db, 'settings', 'fireflies_pipeline');
-        const settingsSnap = await getDoc(settingsRef);
+        // Read settings from Prisma
+        const settingObj = await prisma.setting.findUnique({ where: { key: 'fireflies_pipeline' } });
         
-        if (!settingsSnap.exists()) {
+        if (!settingObj) {
             return NextResponse.json({ error: 'Settings not configured' }, { status: 400 });
         }
 
-        const config = settingsSnap.data();
+        const config = settingObj.value as any;
 
         // Use the dynamic ClickUp template string
         let payloadString = config.clickupTemplate || 'Test message';
@@ -21,7 +20,7 @@ export async function POST() {
             .replace('{{title}}', 'QA Integration Mock Call')
             .replace('{{date}}', new Date().toLocaleDateString())
             .replace('{{duration}}', '45')
-            .replace('{{link}}', 'https://sales-call-review-dashboard--sales-review-dashboard.us-east4.hosted.app/calls/mock-123')
+            .replace('{{link}}', `${process.env.NEXT_PUBLIC_APP_URL || 'https://salespulse.onrender.com'}/calls/mock-123`)
             .replace('{{analysis}}', 'This is a mock AI analysis validating that the ClickUp native channel integration correctly parses markdown templates.')
             .replace('{{alignment}}', 'High')
             .replace('{{score}}', '9')

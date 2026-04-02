@@ -1,15 +1,9 @@
 import { Call, CallType, Analysis } from "@/types";
-import { Timestamp } from "firebase/firestore";
 import { getPromptSettings } from "./promptSettings";
 import { prisma } from "@/lib/prisma";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-pro";
-
-// We keep a lightweight Firebase connection only to read prompt settings from the 'settings' collection for backward compatibility,
-// since we haven't ported the dynamic "settings" table fully in this phase yet. Unchanged setting fetching.
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "../firebase";
 
 export async function analyzeSalesCall(
     transcript: string,
@@ -18,12 +12,13 @@ export async function analyzeSalesCall(
 ): Promise<Partial<Analysis>> {
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not set");
 
-    // 0. Fetch the dynamic model selection from Settings
+    // 0. Fetch the dynamic model selection from Prisma Settings
     let selectedModel = DEFAULT_MODEL;
     try {
-        const pipelineSnap = await getDoc(doc(db, 'settings', 'fireflies_pipeline'));
-        if (pipelineSnap.exists() && pipelineSnap.data().aiModel) {
-            selectedModel = pipelineSnap.data().aiModel;
+        const settingObj = await prisma.setting.findUnique({ where: { key: "fireflies_pipeline" } });
+        const settings = (settingObj?.value as any) || {};
+        if (settings.aiModel) {
+            selectedModel = settings.aiModel;
         }
     } catch (err) {
         console.warn('Could not fetch dynamic model from settings. Using default.', err);
@@ -121,7 +116,7 @@ export async function analyzeSalesCall(
             ...analysisData,
             callId: metadata.id,
             repEmail: metadata.repEmail,
-            analyzedAt: Timestamp.now(),
+            analyzedAt: new Date(),
             callType
         };
     } catch (error) {

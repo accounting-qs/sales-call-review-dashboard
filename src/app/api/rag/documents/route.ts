@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfParse: (dataBuffer: Buffer, options?: object) => Promise<{ text: string; numpages: number }> = require("pdf-parse");
 import { v4 as uuidv4 } from "uuid";
@@ -21,9 +21,8 @@ const r2Client = new S3Client({
     },
 });
 
-// Load Gemini
-const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const embeddingModel = ai.getGenerativeModel({ model: "text-embedding-004" });
+// Load Gemini (new @google/genai SDK — uses v1 API which supports text-embedding-004)
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 // Increase max payload size limit to handle PDF payloads
 export const maxDuration = 120; // 2 minutes max
@@ -119,14 +118,18 @@ export async function POST(req: NextRequest) {
         }
 
         // 5. Generate Embeddings & Save Chunks iteratively
+        // Using text-embedding-004 via @google/genai SDK (v1 API — 768 dimensions)
         for (const chunk of chunks) {
-            const result = await embeddingModel.embedContent(chunk);
-            const embeddingArray = result.embedding.values; // Expected Array(768)
+            const embedResult = await genAI.models.embedContent({
+                model: "text-embedding-004",
+                contents: chunk,
+            });
+            const embeddingArray = embedResult.embeddings?.[0]?.values;
+            if (!embeddingArray || embeddingArray.length === 0) {
+                throw new Error(`Failed to generate embedding for chunk (got empty values)`);
+            }
 
-            // Since Prisma natively handles unsupported pgvector fields via raw queries:
             const chunkId = uuidv4();
-            
-            // Format array to pgvector string format: '[0.1, 0.2, ...]'
             const formatVectorStr = `[${embeddingArray.join(',')}]`;
 
             await prisma.$executeRaw`

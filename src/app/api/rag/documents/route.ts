@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfParse: (dataBuffer: Buffer, options?: object) => Promise<{ text: string; numpages: number }> = require("pdf-parse");
 import { v4 as uuidv4 } from "uuid";
@@ -21,11 +21,12 @@ const r2Client = new S3Client({
     },
 });
 
-// Load Gemini (new @google/genai SDK — uses v1 API which supports text-embedding-004)
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+// OpenAI client — lazy initialized inside POST to avoid build-time env errors
+function getOpenAI() {
+    return new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
+}
 
-// Increase max payload size limit to handle PDF payloads
-export const maxDuration = 120; // 2 minutes max
+export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
@@ -58,7 +59,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
     let documentId: string = '';
-    
+
     try {
         const formData = await req.formData();
         const file = formData.get('file') as File;
@@ -81,30 +82,30 @@ export async function POST(req: NextRequest) {
             ContentType: file.type || 'application/pdf',
         }));
 
-        const r2Url = `https://pub-${process.env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.dev/${fileKey}`; // We'll save relative path or public if enabled
-
-        // 2. Extract Text from PDF using pdf-parse natively
+        // 2. Extract Text from PDF
+        console.log(`[RAG] Extracting text from: ${file.name}`);
         const pdfData = await pdfParse(buffer);
         let extractedText = pdfData.text || '';
         if (extractedText.trim().length === 0) {
-            return NextResponse.json({ error: 'Failed to extract text from PDF (might be image-based)' }, { status: 400 });
+            return NextResponse.json({ error: 'Failed to extract text from PDF (might be image-based or scanned)' }, { status: 400 });
         }
+        console.log(`[RAG] Extracted ${extractedText.length} chars from ${pdfData.numpages} pages`);
 
-        // 3. Save Document Base to DB
+        // 3. Save Document to DB
         documentId = uuidv4();
         await prisma.knowledgeDocument.create({
             data: {
                 id: documentId,
                 name: file.name,
                 r2Url: fileKey,
-                extractedText: extractedText.substring(0, 100000), // Safety cap the raw column
+                extractedText: extractedText.substring(0, 100000),
                 isActive: true,
                 useInCall1,
                 useInCall2
             }
         });
 
-        // 4. Chunking Logic (Recursive strict word approx length)
+        // 4. Chunk the text (1000 words per chunk, 200-word overlap)
         const CHUNK_SIZE = 1000;
         const CHUNK_OVERLAP = 200;
         const textWords = extractedText.split(/\s+/);
@@ -112,44 +113,57 @@ export async function POST(req: NextRequest) {
 
         for (let i = 0; i < textWords.length; i += (CHUNK_SIZE - CHUNK_OVERLAP)) {
             const chunk = textWords.slice(i, i + CHUNK_SIZE).join(" ");
-            if (chunk.trim().length > 10) { // Don't embed tiny chunks
+            if (chunk.trim().length > 10) {
                 chunks.push(chunk.trim());
             }
         }
+        console.log(`[RAG] Created ${chunks.length} chunks`);
 
-        // 5. Generate Embeddings & Save Chunks iteratively
-        // Using text-embedding-004 via @google/genai SDK (v1 API — 768 dimensions)
-        for (const chunk of chunks) {
-            const embedResult = await genAI.models.embedContent({
-                model: "text-embedding-004",
-                contents: chunk,
+        // 5. Generate OpenAI Embeddings (text-embedding-3-small = 1536 dims) & Save
+        const openai = getOpenAI();
+        // Batch for efficiency
+        const BATCH_SIZE = 20;
+        let savedChunks = 0;
+
+        for (let b = 0; b < chunks.length; b += BATCH_SIZE) {
+            const batch = chunks.slice(b, b + BATCH_SIZE);
+
+            const embeddingResponse = await openai.embeddings.create({
+                model: "text-embedding-3-small",
+                input: batch,
+                encoding_format: "float",
             });
-            const embeddingArray = embedResult.embeddings?.[0]?.values;
-            if (!embeddingArray || embeddingArray.length === 0) {
-                throw new Error(`Failed to generate embedding for chunk (got empty values)`);
+
+            for (let i = 0; i < batch.length; i++) {
+                const embeddingArray = embeddingResponse.data[i].embedding; // 1536 floats
+                const chunkId = uuidv4();
+                const formatVectorStr = `[${embeddingArray.join(',')}]`;
+
+                await prisma.$executeRaw`
+                    INSERT INTO "KnowledgeChunk" (id, "documentId", content, embedding, "createdAt")
+                    VALUES (${chunkId}, ${documentId}, ${batch[i]}, ${formatVectorStr}::vector, NOW())
+                `;
+                savedChunks++;
             }
 
-            const chunkId = uuidv4();
-            const formatVectorStr = `[${embeddingArray.join(',')}]`;
-
-            await prisma.$executeRaw`
-                INSERT INTO "KnowledgeChunk" (id, "documentId", content, embedding, "createdAt")
-                VALUES (${chunkId}, ${documentId}, ${chunk}, ${formatVectorStr}::vector, NOW())
-            `;
+            console.log(`[RAG] Embedded batch ${Math.ceil((b + BATCH_SIZE) / BATCH_SIZE)}/${Math.ceil(chunks.length / BATCH_SIZE)}`);
         }
 
-        return NextResponse.json({ success: true, message: `Vectorized ${chunks.length} chunks.` });
+        return NextResponse.json({
+            success: true,
+            message: `Document processed: ${savedChunks} chunks embedded via OpenAI text-embedding-3-small.`
+        });
 
     } catch (error: any) {
         console.error('[RAG] Upload pipeline error:', error);
-        
-        // Rolling back orphan document
+
+        // Rollback orphan document if created
         if (documentId) {
-             try {
-                 await prisma.knowledgeDocument.delete({ where: { id: documentId } });
-             } catch {}
+            try {
+                await prisma.knowledgeDocument.delete({ where: { id: documentId } });
+            } catch { /* ignore rollback errors */ }
         }
 
-        return NextResponse.json({ error: error.message || 'Failed to process RAG payload' }, { status: 500 });
+        return NextResponse.json({ error: error.message || 'Failed to process document' }, { status: 500 });
     }
 }
